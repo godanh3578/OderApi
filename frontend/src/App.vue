@@ -13,6 +13,16 @@ const newCustomer = ref({
   address: ''
 })
 
+const newOrder = ref({
+  customerName: '',
+  totalAmount: 0
+})
+
+const newSupplier = ref({
+  name: '',
+  phone: ''
+})
+
 async function loadCustomers() {
   const res = await fetch(`${API}/api/Customers`)
   customers.value = await res.json()
@@ -25,8 +35,13 @@ async function addCustomer() {
     body: JSON.stringify(newCustomer.value)
   })
 
-  newCustomer.value = { name: '', phone: '', address: '' }
-  await loadCustomers()
+  newCustomer.value = {
+    name: '',
+    phone: '',
+    address: ''
+  }
+
+  loadCustomers()
 }
 
 async function deleteCustomer(id) {
@@ -34,7 +49,7 @@ async function deleteCustomer(id) {
     method: 'DELETE'
   })
 
-  await loadCustomers()
+  loadCustomers()
 }
 
 async function loadOrders() {
@@ -42,9 +57,59 @@ async function loadOrders() {
   orders.value = await res.json()
 }
 
+async function addOrder() {
+  await fetch(`${API}/api/Orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customerName: newOrder.value.customerName,
+      totalAmount: Number(newOrder.value.totalAmount),
+      items: []
+    })
+  })
+
+  newOrder.value = {
+    customerName: '',
+    totalAmount: 0
+  }
+
+  loadOrders()
+}
+
+async function deleteOrder(id) {
+  await fetch(`${API}/api/Orders/${id}`, {
+    method: 'DELETE'
+  })
+
+  loadOrders()
+}
+
 async function loadSuppliers() {
   const res = await fetch(`${API}/api/Suppliers`)
   suppliers.value = await res.json()
+}
+
+async function addSupplier() {
+  await fetch(`${API}/api/Suppliers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newSupplier.value)
+  })
+
+  newSupplier.value = {
+    name: '',
+    phone: ''
+  }
+
+  loadSuppliers()
+}
+
+async function deleteSupplier(id) {
+  await fetch(`${API}/api/Suppliers/${id}`, {
+    method: 'DELETE'
+  })
+
+  loadSuppliers()
 }
 
 async function loadAll() {
@@ -58,192 +123,170 @@ onMounted(loadAll)
 
 <template>
     <div class="page">
-        <header class="hero">
-            <div>
-                <p class="tag">Order & Sales Service</p>
-                <h1>Hệ thống quản lý bán hàng</h1>
-                <p>Trang chủ gọi API từ backend nhóm 2.</p>
-            </div>
+        <div class="header">
+            <h1>Hệ thống quản lý bán hàng</h1>
+            <button @click="loadAll">Refresh</button>
+        </div>
 
-            <button @click="loadAll">Tải tất cả dữ liệu</button>
-        </header>
+        <div class="grid">
 
-        <section class="grid">
-            <div class="card big">
+            <!-- Customers -->
+            <div class="card">
                 <h2>Khách hàng</h2>
 
                 <div class="form">
-                    <input v-model="newCustomer.name" placeholder="Tên khách hàng" />
-                    <input v-model="newCustomer.phone" placeholder="Số điện thoại" />
+                    <input v-model="newCustomer.name" placeholder="Tên" />
+                    <input v-model="newCustomer.phone" placeholder="SĐT" />
                     <input v-model="newCustomer.address" placeholder="Địa chỉ" />
-                    <button @click="addCustomer">+ Thêm</button>
+                    <button @click="addCustomer">Thêm</button>
                 </div>
-
-                <div v-if="customers.length === 0" class="empty">Chưa có dữ liệu</div>
 
                 <div v-for="c in customers" :key="c.id" class="item">
                     <div>
                         <b>{{ c.name }}</b>
-                        <span>{{ c.phone }}</span>
+                        <p>{{ c.phone }}</p>
                         <small>{{ c.address }}</small>
                     </div>
 
-                    <button class="danger" @click="deleteCustomer(c.id)">Xóa</button>
+                    <button class="delete" @click="deleteCustomer(c.id)">
+                        Xóa
+                    </button>
                 </div>
             </div>
 
+            <!-- Orders -->
             <div class="card">
                 <h2>Đơn hàng</h2>
 
-                <div v-if="orders.length === 0" class="empty">Chưa có dữ liệu</div>
+                <div class="form">
+                    <input v-model="newOrder.customerName"
+                           placeholder="Tên khách" />
+
+                    <input v-model="newOrder.totalAmount"
+                           type="number"
+                           placeholder="Tổng tiền" />
+
+                    <button @click="addOrder">Thêm</button>
+                </div>
 
                 <div v-for="o in orders" :key="o.id" class="item">
                     <div>
                         <b>{{ o.customerName }}</b>
-                        <span>{{ o.totalAmount.toLocaleString() }} VNĐ</span>
+                        <p>{{ o.totalAmount.toLocaleString() }} VNĐ</p>
                     </div>
+
+                    <button class="delete" @click="deleteOrder(o.id)">
+                        Xóa
+                    </button>
                 </div>
             </div>
 
+            <!-- Suppliers -->
             <div class="card">
                 <h2>Nhà cung cấp</h2>
 
-                <div v-if="suppliers.length === 0" class="empty">Chưa có dữ liệu</div>
+                <div class="form">
+                    <input v-model="newSupplier.name" placeholder="Tên NCC" />
+                    <input v-model="newSupplier.phone" placeholder="SĐT" />
+                    <button @click="addSupplier">Thêm</button>
+                </div>
 
                 <div v-for="s in suppliers" :key="s.id" class="item">
                     <div>
                         <b>{{ s.name }}</b>
-                        <span>{{ s.phone }}</span>
+                        <p>{{ s.phone }}</p>
                     </div>
+
+                    <button class="delete" @click="deleteSupplier(s.id)">
+                        Xóa
+                    </button>
                 </div>
             </div>
-        </section>
+
+        </div>
     </div>
 </template>
 
 <style scoped>
     .page {
         min-height: 100vh;
-        padding: 40px;
-        background: linear-gradient(135deg, #e0f2fe, #f8fafc);
-        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        padding: 30px;
+        font-family: Arial;
     }
 
-    .hero {
-        background: white;
-        border-radius: 24px;
-        padding: 32px;
+    .header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-        margin-bottom: 28px;
-    }
-
-    .tag {
-        color: #2563eb;
-        font-weight: bold;
-    }
-
-    h1 {
-        margin: 8px 0;
-        color: #0f172a;
+        margin-bottom: 30px;
     }
 
     .grid {
         display: grid;
-        grid-template-columns: 2fr 1fr 1fr;
-        gap: 22px;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
     }
 
     .card {
         background: white;
-        border-radius: 22px;
-        padding: 24px;
-        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.08);
+        padding: 20px;
+        border-radius: 20px;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.08);
     }
 
     .form {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr auto;
+        display: flex;
+        flex-direction: column;
         gap: 10px;
-        margin-bottom: 18px;
+        margin-bottom: 20px;
     }
 
     input {
-        padding: 12px;
-        border-radius: 12px;
-        border: 1px solid #cbd5e1;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #ccc;
     }
 
     button {
         border: none;
+        padding: 10px;
+        border-radius: 10px;
         background: #2563eb;
         color: white;
-        padding: 10px 16px;
-        border-radius: 12px;
         cursor: pointer;
-        font-weight: bold;
     }
 
         button:hover {
-            background: #1d4ed8;
+            opacity: 0.9;
         }
 
-    .danger {
+    .delete {
         background: #ef4444;
     }
 
-        .danger:hover {
-            background: #dc2626;
-        }
-
     .item {
         background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        padding: 14px;
+        padding: 15px;
         border-radius: 14px;
         margin-bottom: 12px;
         display: flex;
         justify-content: space-between;
-        gap: 12px;
+        align-items: center;
     }
 
-        .item div {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .item b {
-            color: #0f172a;
-        }
-
-        .item span {
+        .item p {
+            margin: 5px 0;
             color: #2563eb;
         }
 
         .item small {
-            color: #64748b;
+            color: gray;
         }
 
-    .empty {
-        color: #94a3b8;
-        background: #f8fafc;
-        padding: 14px;
-        border-radius: 14px;
-    }
-
-    @media (max-width: 1000px) {
-        .grid,
-        .form {
+    @media (max-width: 900px) {
+        .grid {
             grid-template-columns: 1fr;
-        }
-
-        .hero {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 16px;
         }
     }
 </style>
