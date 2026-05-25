@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OrderApi.Data;
+// Swagger security definitions removed to avoid extra package dependency.
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,23 +11,48 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<OrderDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Configure CORS from configuration: Cors:AllowedOrigins (array). In Development default to AllowAnyOrigin.
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("DefaultCorsPolicy", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        if (allowedOrigins == null || allowedOrigins.Length == 0)
+        {
+            if (builder.Environment.IsDevelopment())
+            {
+                policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            }
+            else
+            {
+                // No origins configured in production — block cross-origin by default.
+                policy.SetIsOriginAllowed(_ => false).AllowAnyHeader().AllowAnyMethod();
+            }
+        }
+        else
+        {
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+        }
     });
 });
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+// Only enable Swagger in Development by default
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-app.UseCors("AllowAll");
+app.UseCors("DefaultCorsPolicy");
 
 app.MapControllers();
 
-app.Run("http://0.0.0.0:5296");
+// Determine URLs to bind: prefer `ASPNETCORE_URLS`, then configuration `Host:Urls`,
+// otherwise default to the requested IP and port for local testing.
+var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+           ?? builder.Configuration["Host:Urls"]
+           ?? "http://160.250.132.117:5296";
+
+app.Run(urls);

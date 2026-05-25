@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using OrderApi.Data;
 using OrderApi.Models;
 
 namespace OrderApi.Controllers
@@ -7,18 +9,24 @@ namespace OrderApi.Controllers
     [Route("api/[controller]")]
     public class OrdersController : ControllerBase
     {
-        private static List<Order> orders = new List<Order>();
+        private readonly OrderDbContext _context;
+
+        public OrdersController(OrderDbContext context)
+        {
+            _context = context;
+        }
 
         [HttpGet]
-        public IActionResult GetAll()
+        public async Task<IActionResult> GetAll()
         {
+            var orders = await _context.Orders.Include(o => o.Items).ToListAsync();
             return Ok(orders);
         }
 
         [HttpGet("{id}")]
-        public IActionResult GetById(int id)
+        public async Task<IActionResult> GetById(int id)
         {
-            var order = orders.FirstOrDefault(x => x.Id == id);
+            var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id);
 
             if (order == null)
                 return NotFound();
@@ -27,16 +35,28 @@ namespace OrderApi.Controllers
         }
 
         [HttpPost]
-        public IActionResult Create(Order order)
+        public async Task<IActionResult> Create(Order order)
         {
-            orders.Add(order);
-            return Ok(order);
+            try
+            {
+                _context.Orders.Add(order);
+                await _context.SaveChangesAsync();
+                return Ok(order);
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, "An error occurred while saving the order.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "An unexpected error occurred.");
+            }
         }
 
         [HttpPut("{id}")]
-        public IActionResult Update(int id, Order updatedOrder)
+        public async Task<IActionResult> Update(int id, Order updatedOrder)
         {
-            var order = orders.FirstOrDefault(x => x.Id == id);
+            var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id);
 
             if (order == null)
                 return NotFound();
@@ -45,19 +65,44 @@ namespace OrderApi.Controllers
             order.TotalAmount = updatedOrder.TotalAmount;
             order.Items = updatedOrder.Items;
 
-            return Ok(order);
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(order);
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, "An error occurred while updating the order.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "An unexpected error occurred.");
+            }
         }
 
         [HttpDelete("{id}")]
-        public IActionResult Delete(int id)
+        public async Task<IActionResult> Delete(int id)
         {
-            var order = orders.FirstOrDefault(x => x.Id == id);
+            var order = await _context.Orders.FindAsync(id);
 
             if (order == null)
                 return NotFound();
 
-            orders.Remove(order);
-            return Ok();
+            _context.Orders.Remove(order);
+
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok();
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, "An error occurred while deleting the order.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "An unexpected error occurred.");
+            }
         }
     }
 }

@@ -37,10 +37,21 @@ namespace OrderApi.Controllers
         [HttpPost]
         public async Task<IActionResult> Create(Customer customer)
         {
-            _context.Customers.Add(customer);
-            await _context.SaveChangesAsync();
+            try
+            {
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync();
 
-            return Ok(customer);
+                return Ok(customer);
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, "An error occurred while saving the customer.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "An unexpected error occurred.");
+            }
         }
 
         [HttpPut("{id}")]
@@ -55,9 +66,19 @@ namespace OrderApi.Controllers
             customer.Phone = updatedCustomer.Phone;
             customer.Address = updatedCustomer.Address;
 
-            await _context.SaveChangesAsync();
-
-            return Ok(customer);
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(customer);
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, "An error occurred while updating the customer.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "An unexpected error occurred.");
+            }
         }
 
         [HttpDelete("{id}")]
@@ -69,10 +90,19 @@ namespace OrderApi.Controllers
                 return NotFound();
 
             _context.Customers.Remove(customer);
-
-            await _context.SaveChangesAsync();
-
-            return Ok();
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok();
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, "An error occurred while deleting the customer.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "An unexpected error occurred.");
+            }
         }
     }
 }
