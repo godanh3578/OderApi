@@ -49,10 +49,9 @@ app.UseCors("DefaultCorsPolicy");
 
 app.MapControllers();
 
-// Determine URLs to bind: prefer `ASPNETCORE_URLS`, then configuration `Host:Urls`,
-// otherwise default to the requested IP and port for local testing.
+
 var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
            ?? builder.Configuration["Host:Urls"]
-           ?? "http://160.250.132.117:5296";
+           ?? "http://192.168.29.23:5002";
 
-app.Run(urls);
+app.Run();
