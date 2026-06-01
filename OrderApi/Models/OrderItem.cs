@@ -6,6 +6,10 @@ namespace OrderApi.Models
     {
         public int Id { get; set; }
 
+        [Required]
+        public int OrderId { get; set; }
+        public Order? Order { get; set; }
+
         public int ProductId { get; set; }
 
         [Required]
@@ -17,5 +21,7 @@ namespace OrderApi.Models
 
         [Range(0, double.MaxValue)]
         public double Price { get; set; }
+
+        public double Subtotal => Quantity * Price;
     }
 }

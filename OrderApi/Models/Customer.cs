@@ -13,6 +13,14 @@ namespace OrderApi.Models
         [Phone]
         public string Phone { get; set; } = "";
 
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
         public string Address { get; set; } = "";
+
+        [Range(0, double.MaxValue)]
+        public double Debt { get; set; } = 0;
+
+        public List<Order> Orders { get; set; } = new();
     }
 }

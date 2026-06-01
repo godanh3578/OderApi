@@ -23,15 +23,31 @@ namespace OrderApi.Controllers
             return Ok(customers);
         }
 
+        // GET api/customers/{id} — trả về cả lịch sử đơn hàng
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
+        {
+            var customer = await _context.Customers
+                .Include(c => c.Orders)
+                    .ThenInclude(o => o.Items)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (customer == null)
+                return NotFound();
+
+            return Ok(customer);
+        }
+
+        // GET api/customers/{id}/debt — xem công nợ
+        [HttpGet("{id}/debt")]
+        public async Task<IActionResult> GetDebt(int id)
         {
             var customer = await _context.Customers.FindAsync(id);
 
             if (customer == null)
                 return NotFound();
 
-            return Ok(customer);
+            return Ok(new { customerId = id, name = customer.Name, debt = customer.Debt });
         }
 
         [HttpPost]
@@ -41,7 +57,6 @@ namespace OrderApi.Controllers
             {
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
-
                 return Ok(customer);
             }
             catch (DbUpdateException)
@@ -64,7 +79,9 @@ namespace OrderApi.Controllers
 
             customer.Name = updatedCustomer.Name;
             customer.Phone = updatedCustomer.Phone;
+            customer.Email = updatedCustomer.Email;
             customer.Address = updatedCustomer.Address;
+            customer.Debt = updatedCustomer.Debt;
 
             try
             {
@@ -90,6 +107,7 @@ namespace OrderApi.Controllers
                 return NotFound();
 
             _context.Customers.Remove(customer);
+
             try
             {
                 await _context.SaveChangesAsync();

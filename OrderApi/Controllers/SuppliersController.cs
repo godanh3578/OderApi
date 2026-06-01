@@ -63,6 +63,9 @@ namespace OrderApi.Controllers
 
             supplier.Name = updatedSupplier.Name;
             supplier.Phone = updatedSupplier.Phone;
+            supplier.Email = updatedSupplier.Email;
+            supplier.Address = updatedSupplier.Address;
+            supplier.ContactPerson = updatedSupplier.ContactPerson;
 
             try
             {
