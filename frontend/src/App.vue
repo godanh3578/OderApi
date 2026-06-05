@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
-const API = 'http://192.168.29.23:5002'
+const API = (import.meta.env.VITE_API_URL || 'http://160.250.132.117:3000').replace(/\/$/, '')
 
 const activePanel = ref('dashboard')
 
@@ -15,6 +15,7 @@ const debts = ref([])
 const outboxMessages = ref([])
 const showCustomerModal = ref(false)
 const editingCustomer = ref(null)
+const loadError = ref('')
 
 const customerForm = ref({
   name: '',
@@ -37,12 +38,16 @@ async function safeGet(url, fallback = []) {
   try {
     const res = await axios.get(url)
     return Array.isArray(res.data) ? res.data : fallback
-  } catch {
+  } catch (err) {
+    console.error(`Failed to load ${url}`, err)
+    loadError.value = 'Khong the tai mot so du lieu tu API. Dang hien thi du lieu hien co hoac du lieu mau.'
     return fallback
   }
 }
 
 async function loadAll() {
+  loadError.value = ''
+
   customers.value = await safeGet(`${API}/api/Customers`)
   orders.value = await safeGet(`${API}/api/Orders`)
   suppliers.value = await safeGet(`${API}/api/Suppliers`)
@@ -82,17 +87,17 @@ async function loadAll() {
   outboxMessages.value = await safeGet(`${API}/api/OutboxMessages`, [])
 }
 
+function showApiError(action, err) {
+  console.error(action, err)
+  alert(`${action} khong thanh cong. Vui long kiem tra API va thu lai.`)
+}
+
 function openPanel(panel) {
   activePanel.value = panel
 }
 
 function isActive(panel) {
   return activePanel.value === panel
-}
-
-function getNextId(list) {
-  if (!list || list.length === 0) return 1
-  return Math.max(...list.map(item => Number(item.id || 0))) + 1
 }
 
 function totalRevenue() {
@@ -165,23 +170,6 @@ function productPrice(p) {
 
 function productStock(p) {
   return Number(p.quantityAvailable ?? p.stock ?? 0)
-}
-
-function reduceProductStock(items) {
-  for (const item of items) {
-    const product = products.value.find(p => productId(p) === item.productId)
-    if (!product) continue
-
-    if (product.quantityAvailable !== undefined) {
-      product.quantityAvailable = Number(product.quantityAvailable || 0) - Number(item.quantity || 0)
-      if (product.quantityAvailable < 0) product.quantityAvailable = 0
-    } else if (product.stock !== undefined) {
-      product.stock = Number(product.stock || 0) - Number(item.quantity || 0)
-      if (product.stock < 0) product.stock = 0
-    }
-
-    product.stockStatus = productStock(product) > 0 ? 'InStock' : 'OutOfStock'
-  }
 }
 
 function addToCart(product) {
@@ -259,8 +247,6 @@ async function createCheckoutOrder() {
     return
   }
 
-  const selectedCustomer = customers.value.find(c => Number(c.id) === Number(checkout.value.customerId))
-
   const payload = {
     customerId: Number(checkout.value.customerId),
     discountAmount: Number(checkout.value.discountAmount || 0),
@@ -277,88 +263,8 @@ async function createCheckoutOrder() {
   }
 
   try {
-    let createdOrder = null
-
-    try {
-      const res = await axios.post(`${API}/api/sales/checkout`, payload)
-      createdOrder = res.data?.data || res.data
-    } catch {
-      const res = await axios.post(`${API}/api/Orders`, {
-        customerId: payload.customerId,
-        totalAmount: cartTotal.value,
-        discountAmount: payload.discountAmount,
-        finalAmount: finalAmount.value,
-        paidAmount: payload.paidAmount,
-        debtAmount: debtAmount.value,
-        paymentMethod: payload.paymentMethod,
-        paymentStatus: debtAmount.value > 0 ? 'Partial' : 'Paid',
-        orderStatus: debtAmount.value > 0 ? 'Debt' : 'Paid',
-        status: debtAmount.value > 0 ? 3 : 2,
-        items: payload.items
-      })
-
-      createdOrder = res.data
-    }
-
-    if (!createdOrder || typeof createdOrder !== 'object') {
-      createdOrder = {
-        id: getNextId(orders.value),
-        customerId: payload.customerId,
-        customer: selectedCustomer,
-        orderDate: new Date().toISOString(),
-        totalAmount: cartTotal.value,
-        discountAmount: payload.discountAmount,
-        finalAmount: finalAmount.value,
-        paidAmount: payload.paidAmount,
-        debtAmount: debtAmount.value,
-        paymentMethod: payload.paymentMethod,
-        paymentStatus: debtAmount.value > 0 ? 'Partial' : 'Paid',
-        orderStatus: debtAmount.value > 0 ? 'Debt' : 'Paid',
-        status: debtAmount.value > 0 ? 3 : 2,
-        items: payload.items
-      }
-    }
-
-    orders.value.push(createdOrder)
-
-    const paymentId = getNextId(payments.value)
-
-    payments.value.push({
-      id: paymentId,
-      orderId: createdOrder.id,
-      paymentCode: `PAY${String(paymentId).padStart(6, '0')}`,
-      paymentMethod: payload.paymentMethod,
-      amount: payload.paidAmount,
-      paymentStatus: debtAmount.value > 0 ? 'Partial' : 'Paid',
-      paymentDate: new Date().toISOString()
-    })
-
-    if (debtAmount.value > 0) {
-      const debtId = getNextId(debts.value)
-
-      debts.value.push({
-        id: debtId,
-        customerId: payload.customerId,
-        customer: selectedCustomer,
-        orderId: createdOrder.id,
-        debtAmount: debtAmount.value,
-        paidAmount: payload.paidAmount,
-        remainingAmount: debtAmount.value,
-        debtStatus: 'Unpaid',
-        createdAt: new Date().toISOString()
-      })
-    }
-
-    const outboxId = getNextId(outboxMessages.value)
-
-    outboxMessages.value.push({
-      id: outboxId,
-      eventName: 'order.created',
-      status: 'Pending',
-      createdAt: new Date().toISOString()
-    })
-
-    reduceProductStock(payload.items)
+    await axios.post(`${API}/api/sales/checkout`, payload)
+    await loadAll()
 
     alert('Tạo đơn hàng thành công!')
 
@@ -372,8 +278,7 @@ async function createCheckoutOrder() {
 
     openPanel('orders')
   } catch (err) {
-    console.log(err)
-    alert('Lỗi khi tạo đơn hàng!')
+    showApiError('Tao don hang', err)
   }
 }
 
@@ -439,17 +344,8 @@ async function saveCustomer() {
     }
 
     closeCustomerModal()
-  } catch {
-    if (editingCustomer.value) {
-      Object.assign(editingCustomer.value, payload)
-    } else {
-      customers.value.push({
-        id: getNextId(customers.value),
-        ...payload
-      })
-    }
-
-    closeCustomerModal()
+  } catch (err) {
+    showApiError(editingCustomer.value ? 'Cap nhat khach hang' : 'Them khach hang', err)
   }
 }
 async function deleteCustomer(id) {
@@ -458,8 +354,8 @@ async function deleteCustomer(id) {
   try {
     await axios.delete(`${API}/api/Customers/${id}`)
     customers.value = customers.value.filter(item => item.id !== id)
-  } catch {
-    customers.value = customers.value.filter(item => item.id !== id)
+  } catch (err) {
+    showApiError('Xoa khach hang', err)
   }
 }
 
@@ -479,8 +375,8 @@ async function editOrder(order) {
     })
 
     Object.assign(order, res.data)
-  } catch {
-    order.status = Number(statusInput)
+  } catch (err) {
+    showApiError('Cap nhat don hang', err)
   }
 }
 
@@ -490,8 +386,8 @@ async function deleteOrder(id) {
   try {
     await axios.delete(`${API}/api/Orders/${id}`)
     orders.value = orders.value.filter(item => item.id !== id)
-  } catch {
-    orders.value = orders.value.filter(item => item.id !== id)
+  } catch (err) {
+    showApiError('Xoa don hang', err)
   }
 }
 
@@ -515,15 +411,8 @@ async function addSupplier() {
     })
 
     suppliers.value.push(res.data)
-  } catch {
-    suppliers.value.push({
-      id: getNextId(suppliers.value),
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
+  } catch (err) {
+    showApiError('Them nha cung cap', err)
   }
 }
 
@@ -547,14 +436,8 @@ async function editSupplier(supplier) {
     })
 
     Object.assign(supplier, res.data)
-  } catch {
-    Object.assign(supplier, {
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
+  } catch (err) {
+    showApiError('Cap nhat nha cung cap', err)
   }
 }
 
@@ -564,8 +447,8 @@ async function deleteSupplier(id) {
   try {
     await axios.delete(`${API}/api/Suppliers/${id}`)
     suppliers.value = suppliers.value.filter(item => item.id !== id)
-  } catch {
-    suppliers.value = suppliers.value.filter(item => item.id !== id)
+  } catch (err) {
+    showApiError('Xoa nha cung cap', err)
   }
 }
 
@@ -574,25 +457,17 @@ async function payDebt(debt) {
   const amount = Number(window.prompt('Nhập số tiền khách trả:', debt.remainingAmount || debt.debtAmount || 0) || 0)
   if (amount <= 0) return
 
+  const remainingAmount = Number(debt.remainingAmount || debt.debtAmount || 0)
+  if (amount > remainingAmount) {
+    alert('So tien tra khong duoc lon hon so cong no con lai.')
+    return
+  }
+
   try {
     await axios.post(`${API}/api/Debts/${debt.id}/pay`, { amount })
     await loadAll()
-  } catch {
-    const remaining = Number(debt.remainingAmount || debt.debtAmount || 0) - amount
-
-    debt.remainingAmount = remaining > 0 ? remaining : 0
-    debt.paidAmount = Number(debt.paidAmount || 0) + amount
-    debt.debtStatus = debt.remainingAmount === 0 ? 'Paid' : 'Partial'
-
-    payments.value.push({
-      id: getNextId(payments.value),
-      orderId: debt.orderId,
-      paymentCode: `PAY${String(getNextId(payments.value)).padStart(6, '0')}`,
-      paymentMethod: 'Cash',
-      amount,
-      paymentStatus: debt.remainingAmount === 0 ? 'Paid' : 'Partial',
-      paymentDate: new Date().toISOString()
-    })
+  } catch (err) {
+    showApiError('Thanh toan cong no', err)
   }
 }
 
@@ -718,6 +593,10 @@ onMounted(loadAll)
           </div>
         </div>
       </header>
+
+      <div v-if="loadError" class="api-alert">
+        {{ loadError }}
+      </div>
 
       <!-- DASHBOARD -->
       <section v-if="activePanel === 'dashboard'">
@@ -1608,6 +1487,16 @@ onMounted(loadAll)
   padding: 12px 18px;
   border: 1px solid var(--color-primary-border);
   border-radius: var(--radius-lg);
+  font-weight: 700;
+}
+
+.api-alert {
+  margin: var(--margin-lg) var(--margin-lg) 0;
+  padding: 12px 16px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-active);
   font-weight: 700;
 }
 

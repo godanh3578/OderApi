@@ -62,8 +62,30 @@ namespace OrderApi.Services
 
         public async Task<CheckoutResponseDto> CheckoutAsync(CheckoutDto dto, string createdBy)
         {
+            if (!string.IsNullOrWhiteSpace(dto.IdempotencyKey))
+            {
+                var existingOrder = await _dbContext.Orders.FirstOrDefaultAsync(o => o.IdempotencyKey == dto.IdempotencyKey);
+                if (existingOrder != null)
+                {
+                    return new CheckoutResponseDto
+                    {
+                        OrderId = existingOrder.OrderId,
+                        OrderCode = existingOrder.OrderCode,
+                        TotalAmount = existingOrder.TotalAmount,
+                        DiscountAmount = existingOrder.DiscountAmount,
+                        FinalAmount = existingOrder.FinalAmount,
+                        PaidAmount = existingOrder.PaidAmount,
+                        DebtAmount = existingOrder.DebtAmount,
+                        PaymentStatus = existingOrder.PaymentStatus.ToString(),
+                        OrderStatus = existingOrder.OrderStatus.ToString()
+                    };
+                }
+            }
+
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Một đơn hàng phải có ít nhất một sản phẩm.");
+
+            using var transaction = await _dbContext.Database.BeginTransactionAsync();
 
             var customer = await _dbContext.Customers.FindAsync(dto.CustomerId)
                 ?? throw new KeyNotFoundException($"Customer {dto.CustomerId} not found");
@@ -94,6 +116,7 @@ namespace OrderApi.Services
 
             var createOrderDto = new CreateOrderDto
             {
+                IdempotencyKey = dto.IdempotencyKey,
                 CustomerId = dto.CustomerId,
                 CustomerName = customer.FullName,
                 Items = items,
@@ -154,6 +177,8 @@ namespace OrderApi.Services
             await _dbContext.SaveChangesAsync();
             await _outboxService.EnqueueOrderCreatedAsync(orderEntity.OrderId);
 
+            await transaction.CommitAsync();
+
             _logger.LogInformation("Checkout completed: {OrderCode}", orderEntity.OrderCode);
 
             return new CheckoutResponseDto
@@ -172,10 +197,11 @@ namespace OrderApi.Services
 
         private async Task<Order> CreateOrderWithoutOutboxAsync(CreateOrderDto dto)
         {
-            var orderCode = $"ORD{(await _dbContext.Orders.CountAsync() + 1):D6}";
+            var orderCode = $"ORD{(await _dbContext.Orders.IgnoreQueryFilters().CountAsync() + 1):D6}";
             var order = new Order
             {
                 OrderCode = orderCode,
+                IdempotencyKey = dto.IdempotencyKey,
                 CustomerId = dto.CustomerId,
                 CreatedBy = dto.CreatedBy,
                 OrderDate = DateTime.UtcNow,

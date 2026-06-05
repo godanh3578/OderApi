@@ -17,5 +17,5 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 5173;
 app.listen(PORT, () => {
-  console.log(`✅ Frontend running at http://localhost:${PORT}`);
+  console.log(`Frontend running at http://localhost:${PORT}`);
 });

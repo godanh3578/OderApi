@@ -2,6 +2,7 @@ namespace OrderApi.DTOs.Orders
 {
     public class CreateOrderDto
     {
+        public string? IdempotencyKey { get; set; }
         public int CustomerId { get; set; }
         public string? CustomerName { get; set; }
         public List<CreateOrderDetailDto> Items { get; set; } = new();

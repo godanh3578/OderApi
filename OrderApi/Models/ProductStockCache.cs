@@ -33,5 +33,7 @@ namespace OrderApi.Models
         public StockStatus StockStatus { get; set; } = StockStatus.OutOfStock;
 
         public DateTime LastUpdatedAt { get; set; } = DateTime.UtcNow;
+
+        public bool IsDeleted { get; set; } = false;
     }
 }
