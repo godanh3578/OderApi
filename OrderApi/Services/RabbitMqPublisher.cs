@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Connections;
-using RabbitMQ.Client;
+﻿using RabbitMQ.Client;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 
 namespace OrderApi.Services
 {
@@ -20,29 +21,36 @@ namespace OrderApi.Services
             {
                 var host = _config["RabbitMQ:Host"] ?? "localhost";
 
-                var factory = new ConnectionFactory { HostName = host };
-                using var connection = factory.CreateConnection();
-                using var channel = connection.CreateModel();
-
-                channel.QueueDeclare(
-                    queue: queueName,
-                    durable: true,
-                    exclusive: false,
-                    autoDelete: false,
-                    arguments: null
-                );
+                var factory = new RabbitMQ.Client.ConnectionFactory { HostName = host };
+                // RabbitMQ.Client 7.x ưu tiên async; dùng async -> sync để giữ API hiện tại.
+                using var connection = factory.CreateConnectionAsync().GetAwaiter().GetResult();
+                using var channel = connection
+                    .CreateChannelAsync(new RabbitMQ.Client.CreateChannelOptions(false, false, null, null), CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
 
                 var json = JsonSerializer.Serialize(message);
                 var body = Encoding.UTF8.GetBytes(json);
-                var props = channel.CreateBasicProperties();
-                props.Persistent = true;
 
-                channel.BasicPublish(
+                // Declare durable queue (demo).
+                channel.QueueDeclareAsync(
+                    queueName,
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: new Dictionary<string, object>(),
+                    noWait: false,
+                    cancellationToken: CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+
+                channel.BasicPublishAsync(
                     exchange: "",
                     routingKey: queueName,
-                    basicProperties: props,
-                    body: body
-                );
+                    body: body,
+                    cancellationToken: CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
             }
             catch (Exception ex)
             {

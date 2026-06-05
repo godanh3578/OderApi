@@ -1,167 +1,103 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using OrderApi.Data;
-using OrderApi.Models;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using OrderApi.DTOs.Orders;
 using OrderApi.Services;
+using System.Security.Claims;
 
 namespace OrderApi.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/orders")]
+    [Authorize(Roles = "Admin,Sales,Warehouse")]
     public class OrdersController : ControllerBase
     {
-        private readonly OrderDbContext _context;
-        private readonly RabbitMqPublisher _publisher;
+        private readonly IOrderService _orderService;
 
-        public OrdersController(OrderDbContext context, RabbitMqPublisher publisher)
+        public OrdersController(IOrderService orderService)
         {
-            _context = context;
-            _publisher = publisher;
+            _orderService = orderService;
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] string? search)
         {
-            var orders = await _context.Orders
-                .Include(o => o.Customer)
-                .Include(o => o.Items)
-                .ToListAsync();
+            var orders = await _orderService.GetAllOrdersAsync(search);
             return Ok(orders);
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var order = await _context.Orders
-                .Include(o => o.Customer)
-                .Include(o => o.Items)
-                .FirstOrDefaultAsync(x => x.Id == id);
-
+            var order = await _orderService.GetOrderByIdAsync(id);
             if (order == null) return NotFound();
             return Ok(order);
         }
 
         [HttpPost]
-        public async Task<IActionResult> Create(Order order)
+        [Authorize(Roles = "Admin,Sales")]
+        public async Task<IActionResult> Create([FromBody] CreateOrderDto dto)
         {
-            // Kiểm tra tồn kho từ cache stock.updated (N1)
-            foreach (var item in order.Items)
-            {
-                if (StockConsumerService.StockCache.TryGetValue(item.ProductId, out var stock))
-                {
-                    if (stock < item.Quantity)
-                        return BadRequest($"Sản phẩm ID {item.ProductId} không đủ tồn kho. Còn: {stock}");
-                }
-            }
-
             try
             {
-                order.OrderDate = DateTime.UtcNow;
-                order.TotalAmount = order.Items.Sum(i => i.Quantity * i.Price)
-                                    * (1 - order.Discount / 100);
+                if (string.IsNullOrWhiteSpace(dto.CreatedBy))
+                    dto.CreatedBy = User.FindFirstValue(ClaimTypes.Name) ?? "sales01";
 
-                _context.Orders.Add(order);
-                await _context.SaveChangesAsync();
-
-                // Publish event order.created → N3 tổng hợp báo cáo
-                _publisher.Publish("order.created", new
-                {
-                    OrderId = order.Id,
-                    CustomerId = order.CustomerId,
-                    TotalAmount = order.TotalAmount,
-                    OrderDate = order.OrderDate,
-                    Items = order.Items.Select(i => new
-                    {
-                        i.ProductId,
-                        i.ProductName,
-                        i.Quantity,
-                        i.Price
-                    })
-                });
-
+                var order = await _orderService.CreateOrderAsync(dto);
                 return Ok(order);
             }
-            catch (DbUpdateException)
+            catch (InvalidOperationException ex)
             {
-                return StatusCode(500, "Lỗi khi lưu đơn hàng.");
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "Lỗi không xác định.");
+                return BadRequest(new { message = ex.Message });
             }
         }
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, Order updatedOrder)
+        [HttpPut("{id}/status")]
+        [Authorize(Roles = "Admin,Sales")]
+        public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusRequest request)
         {
-            var order = await _context.Orders
-                .Include(o => o.Items)
-                .FirstOrDefaultAsync(x => x.Id == id);
-
-            if (order == null) return NotFound();
-
-            order.CustomerId = updatedOrder.CustomerId;
-            order.Status = updatedOrder.Status;
-            order.Discount = updatedOrder.Discount;
-            order.Items = updatedOrder.Items;
-            order.TotalAmount = order.Items.Sum(i => i.Quantity * i.Price)
-                                * (1 - order.Discount / 100);
-
             try
             {
-                await _context.SaveChangesAsync();
+                var order = await _orderService.UpdateOrderStatusAsync(id, request.Status);
                 return Ok(order);
             }
-            catch (DbUpdateException)
+            catch (KeyNotFoundException)
             {
-                return StatusCode(500, "Lỗi khi cập nhật đơn hàng.");
+                return NotFound();
             }
-            catch (Exception)
+            catch (InvalidOperationException ex)
             {
-                return StatusCode(500, "Lỗi không xác định.");
+                return BadRequest(new { message = ex.Message });
             }
         }
 
-        [HttpPatch("{id}/status")]
-        public async Task<IActionResult> UpdateStatus(int id, [FromBody] OrderStatus status)
+        [HttpPut("{id}/cancel")]
+        [Authorize(Roles = "Admin,Sales")]
+        public async Task<IActionResult> Cancel(int id)
         {
-            var order = await _context.Orders.FindAsync(id);
-            if (order == null) return NotFound();
-
-            order.Status = status;
-
             try
             {
-                await _context.SaveChangesAsync();
-                return Ok(order);
+                var ok = await _orderService.CancelOrderAsync(id);
+                if (!ok) return NotFound();
+                return Ok(new { message = "Đơn hàng đã được hủy" });
             }
-            catch (Exception)
+            catch (InvalidOperationException ex)
             {
-                return StatusCode(500, "Lỗi không xác định.");
+                return BadRequest(new { message = ex.Message });
             }
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
         {
-            var order = await _context.Orders.FindAsync(id);
-            if (order == null) return NotFound();
-
-            _context.Orders.Remove(order);
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return Ok();
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, "Lỗi khi xóa đơn hàng.");
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "Lỗi không xác định.");
-            }
+            var ok = await _orderService.DeleteOrderAsync(id);
+            if (!ok) return NotFound();
+            return Ok();
         }
+    }
+
+    public class UpdateOrderStatusRequest
+    {
+        public string Status { get; set; } = "";
     }
 }

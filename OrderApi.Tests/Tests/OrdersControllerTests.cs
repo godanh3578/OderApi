@@ -3,119 +3,90 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using OrderApi.Controllers;
 using OrderApi.Data;
+using OrderApi.DTOs.Orders;
 using OrderApi.Models;
+using OrderApi.Services;
 using Xunit;
 
 namespace OrderApi.Tests.Tests
 {
     public class OrdersControllerTests
     {
-        [Fact]
-        public async Task Create_Get_Update_Delete_Order()
+        private static (OrderDbContext context, OrdersController controller) CreateController()
         {
             var options = new DbContextOptionsBuilder<OrderDbContext>()
-                .UseInMemoryDatabase(databaseName: "OrdersTestDb_" + Guid.NewGuid())
+                .UseInMemoryDatabase("OrdersTestDb_" + Guid.NewGuid())
                 .Options;
 
-            using var context = new OrderDbContext(options);
-            var controller = new OrdersController(context);
-
-            var order = new Order
+            var context = new OrderDbContext(options);
+            context.Customers.Add(new Customer
             {
-                CustomerName = "John",
-                TotalAmount = 100,
-                Items = new List<OrderItem> { new OrderItem { ProductName = "P1", Price = 50, Quantity = 2 } }
+                CustomerId = 1,
+                CustomerCode = "KH001",
+                FullName = "John",
+                Phone = "0123456789",
+                Email = "john@example.com",
+                Address = "Somewhere"
+            });
+            context.ProductStockCaches.Add(new ProductStockCache
+            {
+                ProductId = 1,
+                ProductCode = "SP001",
+                ProductName = "Product 1",
+                SellingPrice = 50,
+                QuantityAvailable = 100,
+                StockStatus = StockStatus.InStock
+            });
+            context.SaveChanges();
+
+            var outbox = new OutboxService(context);
+            var orderService = new OrderService(context, outbox, NullLogger<OrderService>.Instance);
+            var controller = new OrdersController(orderService);
+            return (context, controller);
+        }
+
+        [Fact]
+        public async Task Create_Get_Update_Cancel_Delete_Order()
+        {
+            var (_, controller) = CreateController();
+
+            var dto = new CreateOrderDto
+            {
+                CustomerId = 1,
+                CreatedBy = "sales01",
+                DiscountAmount = 0,
+                Items = new List<CreateOrderDetailDto>
+                {
+                    new() { ProductId = 1, ProductCode = "SP001", ProductName = "P1", Quantity = 2, UnitPrice = 50 }
+                }
             };
 
-            // Create
-            var createActionResult = await controller.Create(order);
-            Order created = null;
-            if (createActionResult is OkObjectResult createOk)
-            {
-                created = Assert.IsType<Order>(createOk.Value);
-                Assert.Equal("John", created.CustomerName);
-            }
-            else if (createActionResult is ObjectResult createObj)
-            {
-                throw new Xunit.Sdk.XunitException($"Create returned status {createObj.StatusCode}: {createObj.Value}");
-            }
-            else
-            {
-                throw new Xunit.Sdk.XunitException($"Create returned unexpected result: {createActionResult.GetType().Name}");
-            }
+            var createResult = await controller.Create(dto);
+            var created = Assert.IsType<OrderDto>((createResult as OkObjectResult)!.Value);
+            Assert.Equal(100, created.TotalAmount);
 
-            // GetAll
-            var getAllAction = await controller.GetAll();
-            if (getAllAction is OkObjectResult getAllOk)
-            {
-                var list = Assert.IsType<List<Order>>(getAllOk.Value);
-                Assert.Single(list);
-            }
-            else if (getAllAction is ObjectResult getAllObj)
-            {
-                throw new Xunit.Sdk.XunitException($"GetAll returned status {getAllObj.StatusCode}: {getAllObj.Value}");
-            }
-            else
-            {
-                throw new Xunit.Sdk.XunitException($"GetAll returned unexpected result: {getAllAction.GetType().Name}");
-            }
+            var getAll = await controller.GetAll(null);
+            var list = Assert.IsType<List<OrderDto>>((getAll as OkObjectResult)!.Value);
+            Assert.Single(list);
 
-            var id = created!.Id;
+            var getById = await controller.GetById(created.OrderId);
+            var fetched = Assert.IsType<OrderDto>((getById as OkObjectResult)!.Value);
+            Assert.Equal(created.OrderId, fetched.OrderId);
 
-            // GetById
-            var getByIdAction = await controller.GetById(id);
-            Order fetched = null;
-            if (getByIdAction is OkObjectResult getByIdOk)
-            {
-                fetched = Assert.IsType<Order>(getByIdOk.Value);
-                Assert.Equal(id, fetched.Id);
-            }
-            else if (getByIdAction is ObjectResult getByIdObj)
-            {
-                throw new Xunit.Sdk.XunitException($"GetById returned status {getByIdObj.StatusCode}: {getByIdObj.Value}");
-            }
-            else
-            {
-                throw new Xunit.Sdk.XunitException($"GetById returned unexpected result: {getByIdAction.GetType().Name}");
-            }
-            Assert.Equal(id, fetched.Id);
+            var statusResult = await controller.UpdateStatus(created.OrderId, new UpdateOrderStatusRequest { Status = "Confirmed" });
+            var updated = Assert.IsType<OrderDto>((statusResult as OkObjectResult)!.Value);
+            Assert.Equal("Confirmed", updated.OrderStatus);
 
-            // Update
-            var updatedOrder = new Order { CustomerName = "Jane", TotalAmount = 200, Items = fetched!.Items };
-            var updateAction = await controller.Update(id, updatedOrder);
-            if (updateAction is OkObjectResult updateOk)
-            {
-                var updated = Assert.IsType<Order>(updateOk.Value);
-                Assert.Equal("Jane", updated.CustomerName);
-            }
-            else if (updateAction is ObjectResult updateObj)
-            {
-                throw new Xunit.Sdk.XunitException($"Update returned status {updateObj.StatusCode}: {updateObj.Value}");
-            }
-            else
-            {
-                throw new Xunit.Sdk.XunitException($"Update returned unexpected result: {updateAction.GetType().Name}");
-            }
+            var cancelResult = await controller.Cancel(created.OrderId);
+            Assert.IsType<OkObjectResult>(cancelResult);
 
-            // Delete
-            var deleteAction = await controller.Delete(id);
-            if (deleteAction is OkResult || deleteAction is OkObjectResult)
-            {
-                // ok
-            }
-            else if (deleteAction is ObjectResult deleteObj)
-            {
-                throw new Xunit.Sdk.XunitException($"Delete returned status {deleteObj.StatusCode}: {deleteObj.Value}");
-            }
-            else
-            {
-                throw new Xunit.Sdk.XunitException($"Delete returned unexpected result: {deleteAction.GetType().Name}");
-            }
+            var deleteResult = await controller.Delete(created.OrderId);
+            Assert.IsType<OkResult>(deleteResult);
 
-            // Verify deletion
-            var afterDelete = await controller.GetById(id);
+            var afterDelete = await controller.GetById(created.OrderId);
             Assert.IsType<NotFoundResult>(afterDelete);
         }
     }

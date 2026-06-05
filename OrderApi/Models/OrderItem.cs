@@ -1,16 +1,21 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace OrderApi.Models
 {
-    public class OrderItem
+    public class OrderDetail
     {
-        public int Id { get; set; }
+        public int OrderDetailId { get; set; }
 
         [Required]
         public int OrderId { get; set; }
         public Order? Order { get; set; }
 
+        [Required]
         public int ProductId { get; set; }
+
+        [Required]
+        [StringLength(50)]
+        public string ProductCode { get; set; } = "";
 
         [Required]
         [StringLength(200)]
@@ -20,8 +25,12 @@ namespace OrderApi.Models
         public int Quantity { get; set; }
 
         [Range(0, double.MaxValue)]
-        public double Price { get; set; }
+        public decimal UnitPrice { get; set; }
 
-        public double Subtotal => Quantity * Price;
+        [Range(0, double.MaxValue)]
+        public decimal DiscountAmount { get; set; } = 0;
+
+        [Range(0, double.MaxValue)]
+        public decimal SubTotal { get; set; }
     }
 }

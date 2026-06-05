@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi;
-using Microsoft.OpenApi.Models;
 using OrderApi.Data;
 using OrderApi.Services;
 using System.Text;
@@ -11,34 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Order API — Nhóm 2", Version = "v1" });
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Nhập: Bearer {token}"
-    });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id   = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
+builder.Services.AddSwaggerGen();
 
 builder.Services.AddDbContext<OrderDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -59,12 +30,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtIss,
             ValidAudience = jwtAud,
-            IssuerSigningKey = new SymmetricSecurityKey(keyBytes)
+            IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+            RoleClaimType = "role"
         };
     });
 
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<ISalesService, SalesService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IDebtService, DebtService>();
+builder.Services.AddScoped<IOutboxService, OutboxService>();
+
 builder.Services.AddSingleton<RabbitMqPublisher>();
 builder.Services.AddHostedService<StockConsumerService>();
+builder.Services.AddHostedService<OutboxDispatcherService>();
 builder.Services.AddAuthorization();
 
 var allowedOrigins = builder.Configuration
@@ -89,6 +69,18 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+try
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+    db.Database.Migrate();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"⚠️ Migration failed: {ex.Message}");
+    Console.WriteLine("Database might not be available. API will run in demo mode.");
+}
 
 if (app.Environment.IsDevelopment())
 {

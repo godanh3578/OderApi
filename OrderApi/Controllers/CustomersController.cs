@@ -1,126 +1,117 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OrderApi.Data;
-using OrderApi.Models;
+using OrderApi.DTOs.Customers;
+using OrderApi.Services;
 
 namespace OrderApi.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/customers")]
+    [Authorize(Roles = "Admin,Sales")]
     public class CustomersController : ControllerBase
     {
+        private readonly ICustomerService _customerService;
         private readonly OrderDbContext _context;
 
-        public CustomersController(OrderDbContext context)
+        public CustomersController(ICustomerService customerService, OrderDbContext context)
         {
+            _customerService = customerService;
             _context = context;
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] string? search)
         {
-            var customers = await _context.Customers.ToListAsync();
+            var customers = await _customerService.GetAllCustomersAsync();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                customers = customers
+                    .Where(c => c.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                        || c.Phone.Contains(term, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
             return Ok(customers);
         }
 
-        // GET api/customers/{id} — trả về cả lịch sử đơn hàng
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var customer = await _context.Customers
-                .Include(c => c.Orders)
-                    .ThenInclude(o => o.Items)
-                .FirstOrDefaultAsync(x => x.Id == id);
-
-            if (customer == null)
-                return NotFound();
-
+            var customer = await _customerService.GetCustomerByIdAsync(id);
+            if (customer == null) return NotFound();
             return Ok(customer);
         }
 
-        // GET api/customers/{id}/debt — xem công nợ
-        [HttpGet("{id}/debt")]
-        public async Task<IActionResult> GetDebt(int id)
-        {
-            var customer = await _context.Customers.FindAsync(id);
-
-            if (customer == null)
-                return NotFound();
-
-            return Ok(new { customerId = id, name = customer.Name, debt = customer.Debt });
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> Create(Customer customer)
+        [HttpGet("{id}/purchase-history")]
+        public async Task<IActionResult> GetPurchaseHistory(int id)
         {
             try
             {
-                _context.Customers.Add(customer);
-                await _context.SaveChangesAsync();
+                var history = await _customerService.GetPurchaseHistoryAsync(id);
+                return Ok(history);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+        }
+
+        [HttpGet("{id}/debts")]
+        public async Task<IActionResult> GetDebts(int id)
+        {
+            var customer = await _context.Customers.FindAsync(id);
+            if (customer == null) return NotFound();
+
+            var debts = await _context.Debts
+                .Where(d => d.CustomerId == id)
+                .ToListAsync();
+
+            return Ok(new
+            {
+                customerId = id,
+                customerName = customer.FullName,
+                currentDebt = customer.CurrentDebt,
+                debts
+            });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateCustomerDto dto)
+        {
+            try
+            {
+                var customer = await _customerService.CreateCustomerAsync(dto);
                 return Ok(customer);
             }
-            catch (DbUpdateException)
+            catch (InvalidOperationException ex)
             {
-                return StatusCode(500, "An error occurred while saving the customer.");
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "An unexpected error occurred.");
+                return BadRequest(new { message = ex.Message });
             }
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, Customer updatedCustomer)
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto)
         {
-            var customer = await _context.Customers.FindAsync(id);
-
-            if (customer == null)
-                return NotFound();
-
-            customer.Name = updatedCustomer.Name;
-            customer.Phone = updatedCustomer.Phone;
-            customer.Email = updatedCustomer.Email;
-            customer.Address = updatedCustomer.Address;
-            customer.Debt = updatedCustomer.Debt;
-
             try
             {
-                await _context.SaveChangesAsync();
+                var customer = await _customerService.UpdateCustomerAsync(id, dto);
                 return Ok(customer);
             }
-            catch (DbUpdateException)
+            catch (KeyNotFoundException)
             {
-                return StatusCode(500, "An error occurred while updating the customer.");
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "An unexpected error occurred.");
+                return NotFound();
             }
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
         {
-            var customer = await _context.Customers.FindAsync(id);
-
-            if (customer == null)
-                return NotFound();
-
-            _context.Customers.Remove(customer);
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return Ok();
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, "An error occurred while deleting the customer.");
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "An unexpected error occurred.");
-            }
+            var ok = await _customerService.DeleteCustomerAsync(id);
+            if (!ok) return NotFound();
+            return Ok();
         }
     }
 }

@@ -2,23 +2,43 @@
 
 namespace OrderApi.Models
 {
+    public enum SupplierStatus
+    {
+        Active,
+        Inactive,
+        Blocked
+    }
+
     public class Supplier
     {
-        public int Id { get; set; }
+        public int SupplierId { get; set; }
+
+        [Required]
+        [StringLength(50)]
+        public string SupplierCode { get; set; } = "";
 
         [Required]
         [StringLength(200)]
-        public string Name { get; set; } = "";
-
-        [Phone]
-        public string Phone { get; set; } = "";
-
-        [EmailAddress]
-        public string Email { get; set; } = "";
-
-        public string Address { get; set; } = "";
+        public string SupplierName { get; set; } = "";
 
         [StringLength(200)]
         public string ContactPerson { get; set; } = "";
+
+        [Phone]
+        [StringLength(20)]
+        public string Phone { get; set; } = "";
+
+        [EmailAddress]
+        [StringLength(200)]
+        public string Email { get; set; } = "";
+
+        [StringLength(500)]
+        public string Address { get; set; } = "";
+
+        public SupplierStatus Status { get; set; } = SupplierStatus.Active;
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 }
