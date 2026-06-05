@@ -1,8 +1,9 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.8 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
+ENV ASPNETCORE_URLS=http://+:5002
 EXPOSE 5002
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0.8 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY ["OrderApi.csproj", "."]
 RUN dotnet restore

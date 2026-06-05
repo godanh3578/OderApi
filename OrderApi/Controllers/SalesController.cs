@@ -57,12 +57,16 @@ namespace OrderApi.Controllers
         }
 
         [HttpPost("apply-discount")]
-        public async Task<IActionResult> ApplyDiscount([FromBody] CalculateTotalDto dto)
+        public async Task<IActionResult> ApplyDiscount([FromBody] ApplyDiscountDto dto)
         {
             try
             {
-                var result = await _salesService.CalculateTotalAsync(dto);
+                var result = await _salesService.ApplyDiscountAsync(dto);
                 return Ok(new { success = true, data = result });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {

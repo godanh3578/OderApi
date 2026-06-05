@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
-const API = 'http://192.168.29.23:5002'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5002'
 
 const activePanel = ref('dashboard')
 
@@ -43,11 +43,11 @@ async function safeGet(url, fallback = []) {
 }
 
 async function loadAll() {
-  customers.value = await safeGet(`${API}/api/Customers`)
-  orders.value = await safeGet(`${API}/api/Orders`)
-  suppliers.value = await safeGet(`${API}/api/Suppliers`)
+  customers.value = (await safeGet(`${API}/api/customers`)).map(normalizeCustomer)
+  orders.value = (await safeGet(`${API}/api/orders`)).map(normalizeOrder)
+  suppliers.value = (await safeGet(`${API}/api/suppliers`)).map(normalizeSupplier)
 
-  products.value = await safeGet(`${API}/api/ProductStockCaches`, [
+  products.value = await safeGet(`${API}/api/stock-cache`, [
     {
       id: 1,
       productId: 1,
@@ -77,9 +77,9 @@ async function loadAll() {
     }
   ])
 
-  payments.value = await safeGet(`${API}/api/Payments`, [])
-  debts.value = await safeGet(`${API}/api/Debts`, [])
-  outboxMessages.value = await safeGet(`${API}/api/OutboxMessages`, [])
+  payments.value = (await safeGet(`${API}/api/payments`, [])).map(normalizePayment)
+  debts.value = (await safeGet(`${API}/api/debts`, [])).map(normalizeDebt)
+  outboxMessages.value = (await safeGet(`${API}/api/outbox`, [])).map(normalizeOutboxMessage)
 }
 
 function openPanel(panel) {
@@ -93,6 +93,51 @@ function isActive(panel) {
 function getNextId(list) {
   if (!list || list.length === 0) return 1
   return Math.max(...list.map(item => Number(item.id || 0))) + 1
+}
+
+function normalizeCustomer(customer) {
+  return {
+    ...customer,
+    id: customer.customerId ?? customer.id,
+    name: customer.fullName ?? customer.name,
+    debt: customer.currentDebt ?? customer.debt ?? 0
+  }
+}
+
+function normalizeOrder(order) {
+  return {
+    ...order,
+    id: order.orderId ?? order.id
+  }
+}
+
+function normalizeSupplier(supplier) {
+  return {
+    ...supplier,
+    id: supplier.supplierId ?? supplier.id,
+    name: supplier.supplierName ?? supplier.name
+  }
+}
+
+function normalizePayment(payment) {
+  return {
+    ...payment,
+    id: payment.paymentId ?? payment.id
+  }
+}
+
+function normalizeDebt(debt) {
+  return {
+    ...debt,
+    id: debt.debtId ?? debt.id
+  }
+}
+
+function normalizeOutboxMessage(message) {
+  return {
+    ...message,
+    id: message.outboxMessageId ?? message.id
+  }
 }
 
 function totalRevenue() {
@@ -281,9 +326,9 @@ async function createCheckoutOrder() {
 
     try {
       const res = await axios.post(`${API}/api/sales/checkout`, payload)
-      createdOrder = res.data?.data || res.data
+      createdOrder = normalizeOrder(res.data?.data || res.data)
     } catch {
-      const res = await axios.post(`${API}/api/Orders`, {
+      const res = await axios.post(`${API}/api/orders`, {
         customerId: payload.customerId,
         totalAmount: cartTotal.value,
         discountAmount: payload.discountAmount,
@@ -297,7 +342,7 @@ async function createCheckoutOrder() {
         items: payload.items
       })
 
-      createdOrder = res.data
+      createdOrder = normalizeOrder(res.data)
     }
 
     if (!createdOrder || typeof createdOrder !== 'object') {
@@ -418,34 +463,34 @@ async function saveCustomer() {
   }
 
   const payload = {
-    name: customerForm.value.name,
+    customerCode: editingCustomer.value?.customerCode || `KH${String(getNextId(customers.value)).padStart(3, '0')}`,
+    fullName: customerForm.value.name,
     phone: customerForm.value.phone,
     email: customerForm.value.email,
-    address: customerForm.value.address,
-    debt: Number(customerForm.value.debt || 0)
+    address: customerForm.value.address
   }
 
   try {
     if (editingCustomer.value) {
-      const res = await axios.put(`${API}/api/Customers/${editingCustomer.value.id}`, {
+      const res = await axios.put(`${API}/api/customers/${editingCustomer.value.id}`, {
         ...editingCustomer.value,
         ...payload
       })
 
-      Object.assign(editingCustomer.value, res.data)
+      Object.assign(editingCustomer.value, normalizeCustomer(res.data))
     } else {
-      const res = await axios.post(`${API}/api/Customers`, payload)
-      customers.value.push(res.data)
+      const res = await axios.post(`${API}/api/customers`, payload)
+      customers.value.push(normalizeCustomer(res.data))
     }
 
     closeCustomerModal()
   } catch {
     if (editingCustomer.value) {
-      Object.assign(editingCustomer.value, payload)
+      Object.assign(editingCustomer.value, normalizeCustomer(payload))
     } else {
       customers.value.push({
         id: getNextId(customers.value),
-        ...payload
+        ...normalizeCustomer(payload)
       })
     }
 
@@ -456,7 +501,7 @@ async function deleteCustomer(id) {
   if (!window.confirm('Bạn có chắc muốn xóa khách hàng này không?')) return
 
   try {
-    await axios.delete(`${API}/api/Customers/${id}`)
+    await axios.delete(`${API}/api/customers/${id}`)
     customers.value = customers.value.filter(item => item.id !== id)
   } catch {
     customers.value = customers.value.filter(item => item.id !== id)
@@ -469,18 +514,17 @@ function addOrder() {
 }
 
 async function editOrder(order) {
-  const statusInput = window.prompt('Trạng thái (0=Pending, 1=Confirmed, 2=Paid, 3=Debt, 4=Cancelled):', order.status ?? 0)
+  const statusInput = window.prompt('Trạng thái (Pending, Confirmed, Paid, Debt, Cancelled):', order.orderStatus || 'Pending')
   if (statusInput === null) return
+  const statusMap = ['Pending', 'Confirmed', 'Paid', 'Debt', 'Cancelled']
+  const status = statusMap[Number(statusInput)] || statusInput
 
   try {
-    const res = await axios.put(`${API}/api/Orders/${order.id}`, {
-      ...order,
-      status: Number(statusInput)
-    })
+    const res = await axios.put(`${API}/api/orders/${order.id}/status`, { status })
 
-    Object.assign(order, res.data)
+    Object.assign(order, normalizeOrder(res.data))
   } catch {
-    order.status = Number(statusInput)
+    order.orderStatus = status
   }
 }
 
@@ -488,7 +532,7 @@ async function deleteOrder(id) {
   if (!window.confirm('Bạn có chắc muốn xóa đơn hàng này không?')) return
 
   try {
-    await axios.delete(`${API}/api/Orders/${id}`)
+    await axios.delete(`${API}/api/orders/${id}`)
     orders.value = orders.value.filter(item => item.id !== id)
   } catch {
     orders.value = orders.value.filter(item => item.id !== id)
@@ -506,15 +550,16 @@ async function addSupplier() {
   const contactPerson = window.prompt('Nhập tên người liên hệ:') || ''
 
   try {
-    const res = await axios.post(`${API}/api/Suppliers`, {
-      name,
+    const res = await axios.post(`${API}/api/suppliers`, {
+      supplierCode: `NCC${String(getNextId(suppliers.value)).padStart(3, '0')}`,
+      supplierName: name,
       phone,
       email,
       address,
       contactPerson
     })
 
-    suppliers.value.push(res.data)
+    suppliers.value.push(normalizeSupplier(res.data))
   } catch {
     suppliers.value.push({
       id: getNextId(suppliers.value),
@@ -537,16 +582,16 @@ async function editSupplier(supplier) {
   const contactPerson = window.prompt('Sửa người liên hệ:', supplier.contactPerson) || supplier.contactPerson
 
   try {
-    const res = await axios.put(`${API}/api/Suppliers/${supplier.id}`, {
+    const res = await axios.put(`${API}/api/suppliers/${supplier.id}`, {
       ...supplier,
-      name,
+      supplierName: name,
       phone,
       email,
       address,
       contactPerson
     })
 
-    Object.assign(supplier, res.data)
+    Object.assign(supplier, normalizeSupplier(res.data))
   } catch {
     Object.assign(supplier, {
       name,
@@ -562,7 +607,7 @@ async function deleteSupplier(id) {
   if (!window.confirm('Bạn có chắc muốn xóa nhà cung cấp này không?')) return
 
   try {
-    await axios.delete(`${API}/api/Suppliers/${id}`)
+    await axios.delete(`${API}/api/suppliers/${id}`)
     suppliers.value = suppliers.value.filter(item => item.id !== id)
   } catch {
     suppliers.value = suppliers.value.filter(item => item.id !== id)
@@ -575,7 +620,7 @@ async function payDebt(debt) {
   if (amount <= 0) return
 
   try {
-    await axios.post(`${API}/api/Debts/${debt.id}/pay`, { amount })
+    await axios.post(`${API}/api/debts/${debt.id}/pay`, { amount })
     await loadAll()
   } catch {
     const remaining = Number(debt.remainingAmount || debt.debtAmount || 0) - amount

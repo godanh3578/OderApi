@@ -41,8 +41,11 @@ namespace OrderApi.Services
             return order == null ? null : MapToDto(order);
         }
 
-        public async Task<List<OrderDto>> GetAllOrdersAsync(string? search = null)
+        public async Task<List<OrderDto>> GetAllOrdersAsync(string? search = null, int page = 1, int pageSize = 20)
         {
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
             var query = _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Items)
@@ -57,7 +60,11 @@ namespace OrderApi.Services
                     o.OrderDate.ToString().Contains(term));
             }
 
-            var orders = await query.OrderByDescending(o => o.OrderDate).ToListAsync();
+            var orders = await query
+                .OrderByDescending(o => o.OrderDate)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
             return orders.Select(MapToDto).ToList();
         }
 
@@ -84,7 +91,7 @@ namespace OrderApi.Services
                     throw new InvalidOperationException($"Sản phẩm {itemDto.ProductId} không đủ tồn kho.");
             }
 
-            var orderCode = await GenerateOrderCodeAsync();
+            var orderCode = GenerateOrderCode();
             var order = new Order
             {
                 OrderCode = orderCode,
@@ -179,10 +186,9 @@ namespace OrderApi.Services
             return true;
         }
 
-        private async Task<string> GenerateOrderCodeAsync()
+        private static string GenerateOrderCode()
         {
-            var count = await _dbContext.Orders.CountAsync();
-            return $"ORD{(count + 1):D6}";
+            return $"ORD{DateTime.UtcNow:yyyyMMddHHmmssfff}{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
         }
 
         private static OrderDto MapToDto(Order order)

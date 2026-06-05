@@ -40,10 +40,28 @@ namespace OrderApi.Services
             return MapToDto(customer);
         }
 
-        public async Task<List<CustomerDto>> GetAllCustomersAsync()
+        public async Task<List<CustomerDto>> GetAllCustomersAsync(string? search = null, int page = 1, int pageSize = 20)
         {
-            var customers = await _dbContext.Customers
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _dbContext.Customers
                 .Include(c => c.Orders)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(c =>
+                    c.FullName.Contains(term) ||
+                    c.Phone.Contains(term) ||
+                    c.CustomerCode.Contains(term));
+            }
+
+            var customers = await query
+                .OrderBy(c => c.FullName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             return customers.Select(MapToDto).ToList();

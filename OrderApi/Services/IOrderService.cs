@@ -6,7 +6,7 @@ namespace OrderApi.Services
     {
         Task<OrderDto?> GetOrderByIdAsync(int orderId);
         Task<OrderDto?> GetOrderByCodeAsync(string orderCode);
-        Task<List<OrderDto>> GetAllOrdersAsync(string? search = null);
+        Task<List<OrderDto>> GetAllOrdersAsync(string? search = null, int page = 1, int pageSize = 20);
         Task<OrderDto> CreateOrderAsync(CreateOrderDto dto);
         Task<OrderDto> UpdateOrderStatusAsync(int orderId, string status);
         Task<bool> CancelOrderAsync(int orderId);

@@ -19,9 +19,9 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] string? search)
+        public async Task<IActionResult> GetAll([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            var orders = await _orderService.GetAllOrdersAsync(search);
+            var orders = await _orderService.GetAllOrdersAsync(search, page, pageSize);
             return Ok(orders);
         }
 

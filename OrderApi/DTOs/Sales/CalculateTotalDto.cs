@@ -19,4 +19,10 @@ namespace OrderApi.DTOs.Sales
         public decimal DiscountAmount { get; set; }
         public decimal FinalAmount { get; set; }
     }
+
+    public class ApplyDiscountDto
+    {
+        public int OrderId { get; set; }
+        public decimal DiscountAmount { get; set; }
+    }
 }
