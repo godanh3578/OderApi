@@ -51,11 +51,19 @@ namespace OrderApi.Services
 
         public async Task<DebtDto> PayDebtAsync(int debtId, CreateDebtPaymentDto dto)
         {
-            var debt = await _dbContext.Debts.FindAsync(debtId);
-            if (debt == null)
-                throw new KeyNotFoundException($"Debt {debtId} not found");
+            var debt = await _dbContext.Debts
+                .Include(d => d.Customer)
+                .Include(d => d.Order)
+                .FirstOrDefaultAsync(d => d.DebtId == debtId)
+                ?? throw new KeyNotFoundException($"Debt {debtId} not found");
 
-            decimal oldRemainingAmount = debt.RemainingAmount;
+            if (dto.Amount <= 0)
+                throw new InvalidOperationException("Số tiền trả nợ phải lớn hơn 0.");
+
+            if (dto.Amount > debt.RemainingAmount)
+                throw new InvalidOperationException("Số tiền trả nợ không được vượt quá số tiền còn lại.");
+
+            var oldRemainingAmount = debt.RemainingAmount;
             debt.PaidAmount += dto.Amount;
 
             // Update status
@@ -76,6 +84,22 @@ namespace OrderApi.Services
             }
 
             debt.UpdatedAt = DateTime.UtcNow;
+
+            if (debt.Order != null)
+            {
+                debt.Order.PaidAmount = Math.Min(debt.Order.PaidAmount + dto.Amount, debt.Order.FinalAmount);
+                debt.Order.DebtAmount = debt.RemainingAmount;
+                debt.Order.PaymentStatus = debt.RemainingAmount == 0 ? PaymentStatus.Paid : PaymentStatus.Partial;
+                debt.Order.OrderStatus = debt.RemainingAmount == 0 ? OrderStatus.Paid : OrderStatus.Debt;
+                debt.Order.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (debt.Customer != null)
+            {
+                debt.Customer.CurrentDebt = Math.Max(debt.Customer.CurrentDebt - (oldRemainingAmount - debt.RemainingAmount), 0);
+                debt.Customer.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _dbContext.SaveChangesAsync();
 
             _logger.LogInformation($"Debt {debtId} payment recorded: {dto.Amount}");

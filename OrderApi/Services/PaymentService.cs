@@ -45,11 +45,13 @@ namespace OrderApi.Services
 
         public async Task<PaymentDto> RecordPaymentAsync(int orderId, CreatePaymentDto dto)
         {
-            var order = await _dbContext.Orders.FindAsync(orderId);
-            if (order == null)
-                throw new KeyNotFoundException($"Order {orderId} not found");
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Debt)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId)
+                ?? throw new KeyNotFoundException($"Order {orderId} not found");
 
-            var paymentCode = $"PAY{DateTime.Now:yyyyMMddHHmmss}";
+            var paymentCode = $"PAY{DateTime.UtcNow:yyyyMMddHHmmssfff}{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
 
             var payment = new Payment
             {
@@ -85,6 +87,19 @@ namespace OrderApi.Services
                 order.PaymentStatus = PaymentStatus.Partial;
                 order.OrderStatus = OrderStatus.Debt;
                 order.DebtAmount = order.FinalAmount - order.PaidAmount;
+            }
+
+            if (order.Debt != null)
+            {
+                order.Debt.PaidAmount = Math.Min(order.Debt.PaidAmount + dto.Amount, order.Debt.DebtAmount);
+                order.Debt.DebtStatus = order.Debt.RemainingAmount == 0 ? DebtStatus.Paid : DebtStatus.Partial;
+                order.Debt.UpdatedAt = DateTime.UtcNow;
+
+                if (order.Customer != null)
+                {
+                    order.Customer.CurrentDebt = Math.Max(order.Customer.CurrentDebt - dto.Amount, 0);
+                    order.Customer.UpdatedAt = DateTime.UtcNow;
+                }
             }
 
             order.UpdatedAt = DateTime.UtcNow;

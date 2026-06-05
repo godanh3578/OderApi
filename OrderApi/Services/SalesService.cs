@@ -60,6 +60,69 @@ namespace OrderApi.Services
             };
         }
 
+        public async Task<CheckoutResponseDto> ApplyDiscountAsync(ApplyDiscountDto dto)
+        {
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Debt)
+                .FirstOrDefaultAsync(o => o.OrderId == dto.OrderId)
+                ?? throw new KeyNotFoundException($"Order {dto.OrderId} not found");
+
+            if (dto.DiscountAmount < 0)
+                throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
+
+            if (dto.DiscountAmount > order.TotalAmount)
+                throw new InvalidOperationException("Chiết khấu không được lớn hơn tổng tiền.");
+
+            var oldDebtAmount = order.DebtAmount;
+            order.DiscountAmount = dto.DiscountAmount;
+            order.FinalAmount = order.TotalAmount - dto.DiscountAmount;
+            order.DebtAmount = Math.Max(order.FinalAmount - order.PaidAmount, 0);
+
+            if (order.DebtAmount == 0)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+                order.OrderStatus = OrderStatus.Paid;
+            }
+            else
+            {
+                order.PaymentStatus = order.PaidAmount > 0 ? PaymentStatus.Partial : PaymentStatus.Unpaid;
+                order.OrderStatus = OrderStatus.Debt;
+            }
+
+            if (order.Debt != null)
+            {
+                order.Debt.DebtAmount = order.DebtAmount;
+                order.Debt.PaidAmount = Math.Min(order.Debt.PaidAmount, order.Debt.DebtAmount);
+                order.Debt.DebtStatus = order.DebtAmount == 0
+                    ? DebtStatus.Paid
+                    : (order.Debt.PaidAmount > 0 ? DebtStatus.Partial : DebtStatus.Unpaid);
+                order.Debt.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (order.Customer != null)
+            {
+                order.Customer.CurrentDebt = Math.Max(order.Customer.CurrentDebt + order.DebtAmount - oldDebtAmount, 0);
+                order.Customer.UpdatedAt = DateTime.UtcNow;
+            }
+
+            order.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+
+            return new CheckoutResponseDto
+            {
+                OrderId = order.OrderId,
+                OrderCode = order.OrderCode,
+                TotalAmount = order.TotalAmount,
+                DiscountAmount = order.DiscountAmount,
+                FinalAmount = order.FinalAmount,
+                PaidAmount = order.PaidAmount,
+                DebtAmount = order.DebtAmount,
+                PaymentStatus = order.PaymentStatus.ToString(),
+                OrderStatus = order.OrderStatus.ToString()
+            };
+        }
+
         public async Task<CheckoutResponseDto> CheckoutAsync(CheckoutDto dto, string createdBy)
         {
             if (dto.Items == null || dto.Items.Count == 0)
@@ -172,7 +235,7 @@ namespace OrderApi.Services
 
         private async Task<Order> CreateOrderWithoutOutboxAsync(CreateOrderDto dto)
         {
-            var orderCode = $"ORD{(await _dbContext.Orders.CountAsync() + 1):D6}";
+            var orderCode = $"ORD{DateTime.UtcNow:yyyyMMddHHmmssfff}{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
             var order = new Order
             {
                 OrderCode = orderCode,

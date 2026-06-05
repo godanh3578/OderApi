@@ -22,17 +22,9 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] string? search)
+        public async Task<IActionResult> GetAll([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            var customers = await _customerService.GetAllCustomersAsync();
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var term = search.Trim();
-                customers = customers
-                    .Where(c => c.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)
-                        || c.Phone.Contains(term, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            }
+            var customers = await _customerService.GetAllCustomersAsync(search, page, pageSize);
             return Ok(customers);
         }
 

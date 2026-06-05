@@ -41,6 +41,7 @@ builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IDebtService, DebtService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
+builder.Services.AddScoped<ISupplierService, SupplierService>();
 
 builder.Services.AddSingleton<RabbitMqPublisher>();
 builder.Services.AddHostedService<StockConsumerService>();

@@ -6,7 +6,7 @@ namespace OrderApi.Services
     {
         Task<CustomerDto?> GetCustomerByIdAsync(int customerId);
         Task<CustomerDto?> GetCustomerByCodeAsync(string customerCode);
-        Task<List<CustomerDto>> GetAllCustomersAsync();
+        Task<List<CustomerDto>> GetAllCustomersAsync(string? search = null, int page = 1, int pageSize = 20);
         Task<CustomerDto> CreateCustomerAsync(CreateCustomerDto dto);
         Task<CustomerDto> UpdateCustomerAsync(int customerId, UpdateCustomerDto dto);
         Task<bool> DeleteCustomerAsync(int customerId);
