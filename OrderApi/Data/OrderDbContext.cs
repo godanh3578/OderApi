@@ -18,6 +18,10 @@ namespace OrderApi.Data
         public DbSet<Payment> Payments { get; set; }
         public DbSet<ProductStockCache> ProductStockCaches { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
+        public DbSet<Return> Returns { get; set; }
+        public DbSet<ReturnDetail> ReturnDetails { get; set; }
+        public DbSet<SalesInvoice> SalesInvoices { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -28,6 +32,9 @@ namespace OrderApi.Data
             modelBuilder.Entity<Customer>()
                 .HasIndex(c => c.CustomerCode)
                 .IsUnique();
+
+            modelBuilder.Entity<Customer>()
+                .HasQueryFilter(c => !c.IsDeleted);
 
             // Suppliers
             modelBuilder.Entity<Supplier>()
@@ -44,6 +51,9 @@ namespace OrderApi.Data
             modelBuilder.Entity<Order>()
                 .HasIndex(o => o.OrderCode)
                 .IsUnique();
+
+            modelBuilder.Entity<Order>()
+                .HasQueryFilter(o => !o.IsDeleted);
 
             modelBuilder.Entity<Order>()
                 .HasOne(o => o.Customer)
@@ -105,9 +115,54 @@ namespace OrderApi.Data
                 .HasIndex(p => p.ProductId)
                 .IsUnique();
 
+            modelBuilder.Entity<ProductStockCache>()
+                .HasQueryFilter(p => !p.IsDeleted);
+
             // OutboxMessages
             modelBuilder.Entity<OutboxMessage>()
                 .HasKey(o => o.OutboxMessageId);
+
+            // AuditLogs
+            modelBuilder.Entity<AuditLog>()
+                .HasKey(a => a.AuditLogId);
+
+            // Returns
+            modelBuilder.Entity<Return>()
+                .HasKey(r => r.ReturnId);
+            modelBuilder.Entity<Return>()
+                .HasIndex(r => r.ReturnCode)
+                .IsUnique();
+            modelBuilder.Entity<Return>()
+                .HasOne(r => r.Order)
+                .WithMany()
+                .HasForeignKey(r => r.OrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Return>()
+                .HasOne(r => r.Customer)
+                .WithMany()
+                .HasForeignKey(r => r.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ReturnDetails
+            modelBuilder.Entity<ReturnDetail>()
+                .HasKey(rd => rd.ReturnDetailId);
+            modelBuilder.Entity<ReturnDetail>()
+                .HasOne(rd => rd.Return)
+                .WithMany(r => r.Items)
+                .HasForeignKey(rd => rd.ReturnId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // SalesInvoices
+            modelBuilder.Entity<SalesInvoice>()
+                .HasKey(si => si.InvoiceId);
+            modelBuilder.Entity<SalesInvoice>()
+                .HasIndex(si => si.InvoiceCode)
+                .IsUnique();
+            modelBuilder.Entity<SalesInvoice>()
+                .HasOne(si => si.Order)
+                .WithMany()
+                .HasForeignKey(si => si.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

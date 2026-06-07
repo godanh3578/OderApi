@@ -2,6 +2,7 @@ namespace OrderApi.DTOs.Sales
 {
     public class CheckoutDto
     {
+        public string? IdempotencyKey { get; set; }
         public int CustomerId { get; set; }
         public decimal DiscountAmount { get; set; }
         public string PaymentMethod { get; set; } = "Cash";

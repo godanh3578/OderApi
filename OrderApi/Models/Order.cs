@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace OrderApi.Models
 {
@@ -25,6 +25,9 @@ namespace OrderApi.Models
         [Required]
         [StringLength(50)]
         public string OrderCode { get; set; } = "";
+
+        [StringLength(100)]
+        public string? IdempotencyKey { get; set; }
 
         [Required]
         public int CustomerId { get; set; }
@@ -58,6 +61,8 @@ namespace OrderApi.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        public bool IsDeleted { get; set; } = false;
 
         [Required]
         public List<OrderDetail> Items { get; set; } = new();
