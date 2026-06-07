@@ -2,7 +2,9 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
-const API = (import.meta.env.VITE_API_URL || 'http://160.250.132.117:3000').replace(/\/$/, '')
+
+
+const API = 'http://192.168.29.23:5002'
 
 // ===== PAGE STATE =====
 const activePage = ref('shop')
@@ -33,8 +35,6 @@ const registerForm = ref({
 // ===== MODAL STATE =====
 const showCustomerModal = ref(false)
 const editingCustomer = ref(null)
-const loadError = ref('')
-
 const customerForm = ref({
   name: '',
   phone: '',
@@ -208,64 +208,9 @@ async function loadAll() {
   customers.value = await safeGet(`${API}/api/Customers`, demoCustomers)
   suppliers.value = await safeGet(`${API}/api/Suppliers`, demoSuppliers)
   orders.value = await safeGet(`${API}/api/Orders`, [])
-const cart = ref([])
-
-async function safeGet(url, fallback = []) {
-  try {
-    const res = await axios.get(url)
-    return Array.isArray(res.data) ? res.data : fallback
-  } catch (err) {
-    console.error(`Failed to load ${url}`, err)
-    loadError.value = 'Khong the tai mot so du lieu tu API. Dang hien thi du lieu hien co hoac du lieu mau.'
-    return fallback
-  }
-}
-
-async function loadAll() {
-  loadError.value = ''
-
-  customers.value = await safeGet(`${API}/api/Customers`)
-  orders.value = await safeGet(`${API}/api/Orders`)
-  suppliers.value = await safeGet(`${API}/api/Suppliers`)
-
-  products.value = await safeGet(`${API}/api/ProductStockCaches`, [
-    {
-      id: 1,
-      productId: 1,
-      productCode: 'SP001',
-      productName: 'Laptop Gaming',
-      sellingPrice: 25000000,
-      quantityAvailable: 12,
-      stockStatus: 'InStock'
-    },
-    {
-      id: 2,
-      productId: 2,
-      productCode: 'SP002',
-      productName: 'Chuột Logitech',
-      sellingPrice: 500000,
-      quantityAvailable: 40,
-      stockStatus: 'InStock'
-    },
-    {
-      id: 3,
-      productId: 3,
-      productCode: 'SP003',
-      productName: 'Bàn phím cơ',
-      sellingPrice: 1200000,
-      quantityAvailable: 0,
-      stockStatus: 'OutOfStock'
-    }
-  ])
-
   payments.value = await safeGet(`${API}/api/Payments`, [])
   debts.value = await safeGet(`${API}/api/Debts`, [])
   outboxMessages.value = await safeGet(`${API}/api/OutboxMessages`, [])
-}
-
-function showApiError(action, err) {
-  console.error(action, err)
-  alert(`${action} khong thanh cong. Vui long kiem tra API va thu lai.`)
 }
 
 // ===== HELPERS =====
@@ -568,10 +513,6 @@ function logout() {
 }
 
 // ===== CART =====
-function productStock(p) {
-  return Number(p.quantityAvailable ?? p.stock ?? 0)
-}
-
 function addToCart(product) {
   if (productStock(product) <= 0) {
     alert('Sản phẩm đã hết hàng.')
@@ -745,8 +686,6 @@ async function createOrder() {
     })
 
     reduceProductStock(payload.items)
-    await axios.post(`${API}/api/sales/checkout`, payload)
-    await loadAll()
 
     alert('Đặt hàng thành công.')
 
@@ -764,9 +703,6 @@ async function createOrder() {
   } catch (error) {
     console.log(error)
     alert('Lỗi khi tạo đơn hàng.')
-    openPanel('orders')
-  } catch (err) {
-    showApiError('Tao don hang', err)
   }
 }
 
@@ -851,27 +787,6 @@ function openSupplierModal(supplier = null) {
 function closeSupplierModal() {
   showSupplierModal.value = false
   editingSupplier.value = null
-    }
-
-    closeCustomerModal()
-  } catch (err) {
-    showApiError(editingCustomer.value ? 'Cap nhat khach hang' : 'Them khach hang', err)
-  }
-}
-async function deleteCustomer(id) {
-  if (!window.confirm('Bạn có chắc muốn xóa khách hàng này không?')) return
-
-  try {
-    await axios.delete(`${API}/api/Customers/${id}`)
-    customers.value = customers.value.filter(item => item.id !== id)
-  } catch (err) {
-    showApiError('Xoa khach hang', err)
-  }
-}
-
-// ===== ORDERS =====
-function addOrder() {
-  openPanel('sales')
 }
 
 async function saveSupplier() {
@@ -947,94 +862,6 @@ async function payDebt() {
     alert('Số tiền trả không được lớn hơn số tiền còn nợ.')
     return
   }
-    Object.assign(order, res.data)
-  } catch (err) {
-    showApiError('Cap nhat don hang', err)
-  }
-}
-
-async function deleteOrder(id) {
-  if (!window.confirm('Bạn có chắc muốn xóa đơn hàng này không?')) return
-
-  try {
-    await axios.delete(`${API}/api/Orders/${id}`)
-    orders.value = orders.value.filter(item => item.id !== id)
-  } catch (err) {
-    showApiError('Xoa don hang', err)
-  }
-}
-
-// ===== SUPPLIERS =====
-async function addSupplier() {
-  const name = window.prompt('Nhập tên nhà cung cấp:')
-  if (!name) return
-
-  const phone = window.prompt('Nhập số điện thoại:') || ''
-  const email = window.prompt('Nhập email:') || ''
-  const address = window.prompt('Nhập địa chỉ:') || ''
-  const contactPerson = window.prompt('Nhập tên người liên hệ:') || ''
-
-  try {
-    const res = await axios.post(`${API}/api/Suppliers`, {
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
-
-    suppliers.value.push(res.data)
-  } catch (err) {
-    showApiError('Them nha cung cap', err)
-  }
-}
-
-async function editSupplier(supplier) {
-  const name = window.prompt('Sửa tên nhà cung cấp:', supplier.name)
-  if (!name) return
-
-  const phone = window.prompt('Sửa số điện thoại:', supplier.phone) || supplier.phone
-  const email = window.prompt('Sửa email:', supplier.email) || supplier.email
-  const address = window.prompt('Sửa địa chỉ:', supplier.address) || supplier.address
-  const contactPerson = window.prompt('Sửa người liên hệ:', supplier.contactPerson) || supplier.contactPerson
-
-  try {
-    const res = await axios.put(`${API}/api/Suppliers/${supplier.id}`, {
-      ...supplier,
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
-
-    Object.assign(supplier, res.data)
-  } catch (err) {
-    showApiError('Cap nhat nha cung cap', err)
-  }
-}
-
-async function deleteSupplier(id) {
-  if (!window.confirm('Bạn có chắc muốn xóa nhà cung cấp này không?')) return
-
-  try {
-    await axios.delete(`${API}/api/Suppliers/${id}`)
-    suppliers.value = suppliers.value.filter(item => item.id !== id)
-  } catch (err) {
-    showApiError('Xoa nha cung cap', err)
-  }
-}
-
-// ===== DEBTS =====
-async function payDebt(debt) {
-  const amount = Number(window.prompt('Nhập số tiền khách trả:', debt.remainingAmount || debt.debtAmount || 0) || 0)
-  if (amount <= 0) return
-
-  const remainingAmount = Number(debt.remainingAmount || debt.debtAmount || 0)
-  if (amount > remainingAmount) {
-    alert('So tien tra khong duoc lon hon so cong no con lai.')
-    return
-  }
 
   try {
     await axios.post(`${API}/api/Debts/${selectedDebt.value.id || selectedDebt.value.debtId}/pay`, {
@@ -1058,8 +885,6 @@ async function payDebt(debt) {
       paymentStatus: selectedDebt.value.remainingAmount === 0 ? 'Paid' : 'Partial',
       paymentDate: new Date().toISOString()
     })
-  } catch (err) {
-    showApiError('Thanh toan cong no', err)
   }
 
   closeDebtModal()
@@ -1251,20 +1076,6 @@ onMounted(loadAll)
             </div>
           </div>
         </section>
-        <div class="topbar-right">
-          <button class="refresh" @click="loadAll">
-            🔄 Refresh
-          </button>
-
-          <div class="user-box">
-            👨‍💻 Admin
-          </div>
-        </div>
-      </header>
-
-      <div v-if="loadError" class="api-alert">
-        {{ loadError }}
-      </div>
 
         <aside class="member-card">
           <h3>👋 Tài khoản khách hàng</h3>
@@ -1721,6 +1532,9 @@ onMounted(loadAll)
 
           <div class="checkout-box customer-checkout">
             <h3>Thông tin đặt hàng</h3>
+            <p class="checkout-note">
+              Khách hàng chỉ cần chọn phương thức thanh toán và xác nhận đơn. Chiết khấu, xác nhận tiền đã trả và công nợ sẽ do hệ thống/nhân viên xử lý ở trang quản trị.
+            </p>
 
             <div class="checkout-field">
               <label>Phương thức thanh toán</label>
@@ -2268,16 +2082,6 @@ button {
   max-width: 1180px;
   margin: 0 auto;
   padding: 16px 12px 60px;
-}
-
-.api-alert {
-  margin: var(--margin-lg) var(--margin-lg) 0;
-  padding: 12px 16px;
-  border: 1px solid var(--color-warning-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-active);
-  font-weight: 700;
 }
 
 .home-layout {
@@ -3187,4 +2991,3 @@ th {
   }
 }
 </style>
-
