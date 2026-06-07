@@ -4,18 +4,35 @@ import axios from 'axios'
 
 const API = 'http://192.168.29.23:5002'
 
-const activePanel = ref('dashboard')
+// ===== PAGE STATE =====
+const activePage = ref('shop')
+const searchText = ref('')
+const showSearchPanel = ref(false)
+const selectedCategory = ref('Tất cả')
+const cartOpen = ref(false)
 
-const customers = ref([])
-const orders = ref([])
-const suppliers = ref([])
-const products = ref([])
-const payments = ref([])
-const debts = ref([])
-const outboxMessages = ref([])
+// ===== AUTH STATE =====
+const showAuthModal = ref(false)
+const authMode = ref('login')
+const authError = ref('')
+const currentUser = ref(null)
+
+const loginForm = ref({
+  phone: '',
+  password: ''
+})
+
+const registerForm = ref({
+  fullName: '',
+  phone: '',
+  email: '',
+  address: '',
+  password: ''
+})
+
+// ===== MODAL STATE =====
 const showCustomerModal = ref(false)
 const editingCustomer = ref(null)
-
 const customerForm = ref({
   name: '',
   phone: '',
@@ -24,15 +41,157 @@ const customerForm = ref({
   debt: 0
 })
 
+const showSupplierModal = ref(false)
+const editingSupplier = ref(null)
+const supplierForm = ref({
+  name: '',
+  contactPerson: '',
+  phone: '',
+  email: '',
+  address: '',
+  status: 'Active'
+})
+
+const showDebtModal = ref(false)
+const selectedDebt = ref(null)
+const debtPayForm = ref({
+  amount: 0,
+  paymentMethod: 'Cash'
+})
+
+// ===== DATA =====
+const products = ref([])
+const customers = ref([])
+const suppliers = ref([])
+const orders = ref([])
+const payments = ref([])
+const debts = ref([])
+const outboxMessages = ref([])
+const cart = ref([])
+
 const checkout = ref({
-  customerId: '',
+  customerId: null,
   discountAmount: 0,
   paymentMethod: 'Cash',
   paidAmount: 0
 })
 
-const cart = ref([])
+// ===== DEMO DATA =====
+const demoProducts = [
+  {
+    id: 1,
+    productId: 1,
+    productCode: 'GD001',
+    productName: 'Nồi cơm điện Sunhouse 1.8L',
+    categoryName: 'Gia dụng',
+    sellingPrice: 650000,
+    quantityAvailable: 12,
+    stockStatus: 'InStock',
+    image: '🍚'
+  },
+  {
+    id: 2,
+    productId: 2,
+    productCode: 'GD002',
+    productName: 'Máy xay sinh tố Philips',
+    categoryName: 'Gia dụng',
+    sellingPrice: 890000,
+    quantityAvailable: 8,
+    stockStatus: 'InStock',
+    image: '🥤'
+  },
+  {
+    id: 3,
+    productId: 3,
+    productCode: 'GD003',
+    productName: 'Quạt điện Panasonic',
+    categoryName: 'Gia dụng',
+    sellingPrice: 780000,
+    quantityAvailable: 0,
+    stockStatus: 'OutOfStock',
+    image: '🌀'
+  },
+  {
+    id: 4,
+    productId: 4,
+    productCode: 'DT001',
+    productName: 'Chuột Logitech M331',
+    categoryName: 'Điện tử',
+    sellingPrice: 320000,
+    quantityAvailable: 30,
+    stockStatus: 'InStock',
+    image: '🖱️'
+  },
+  {
+    id: 5,
+    productId: 5,
+    productCode: 'DT002',
+    productName: 'Bàn phím cơ AKKO',
+    categoryName: 'Điện tử',
+    sellingPrice: 1290000,
+    quantityAvailable: 9,
+    stockStatus: 'InStock',
+    image: '⌨️'
+  },
+  {
+    id: 6,
+    productId: 6,
+    productCode: 'TP001',
+    productName: 'Gạo ST25 túi 5kg',
+    categoryName: 'Thực phẩm',
+    sellingPrice: 185000,
+    quantityAvailable: 25,
+    stockStatus: 'InStock',
+    image: '🍚'
+  },
+  {
+    id: 7,
+    productId: 7,
+    productCode: 'TT001',
+    productName: 'Áo thun cotton nam',
+    categoryName: 'Thời trang',
+    sellingPrice: 150000,
+    quantityAvailable: 18,
+    stockStatus: 'InStock',
+    image: '👕'
+  },
+  {
+    id: 8,
+    productId: 8,
+    productCode: 'VP001',
+    productName: 'Bút bi Thiên Long hộp 20 cây',
+    categoryName: 'Văn phòng phẩm',
+    sellingPrice: 65000,
+    quantityAvailable: 50,
+    stockStatus: 'InStock',
+    image: '🖊️'
+  }
+]
 
+const demoCustomers = [
+  {
+    id: 1,
+    name: 'Nguyễn Văn A',
+    phone: '0912345678',
+    email: 'a@gmail.com',
+    address: 'Hà Nội',
+    debt: 0
+  }
+]
+
+const demoSuppliers = [
+  {
+    id: 1,
+    name: 'Công ty Gia dụng ABC',
+    contactPerson: 'Anh Minh',
+    phone: '0988000111',
+    email: 'abc@gmail.com',
+    address: 'Hà Nội',
+    status: 'Active'
+  }
+]
+
+// ===== API =====
 async function safeGet(url, fallback = []) {
   try {
     const res = await axios.get(url)
@@ -43,150 +202,318 @@ async function safeGet(url, fallback = []) {
 }
 
 async function loadAll() {
-  customers.value = await safeGet(`${API}/api/Customers`)
-  orders.value = await safeGet(`${API}/api/Orders`)
-  suppliers.value = await safeGet(`${API}/api/Suppliers`)
-
-  products.value = await safeGet(`${API}/api/ProductStockCaches`, [
-    {
-      id: 1,
-      productId: 1,
-      productCode: 'SP001',
-      productName: 'Laptop Gaming',
-      sellingPrice: 25000000,
-      quantityAvailable: 12,
-      stockStatus: 'InStock'
-    },
-    {
-      id: 2,
-      productId: 2,
-      productCode: 'SP002',
-      productName: 'Chuột Logitech',
-      sellingPrice: 500000,
-      quantityAvailable: 40,
-      stockStatus: 'InStock'
-    },
-    {
-      id: 3,
-      productId: 3,
-      productCode: 'SP003',
-      productName: 'Bàn phím cơ',
-      sellingPrice: 1200000,
-      quantityAvailable: 0,
-      stockStatus: 'OutOfStock'
-    }
-  ])
-
+  products.value = await safeGet(`${API}/api/ProductStockCaches`, demoProducts)
+  customers.value = await safeGet(`${API}/api/Customers`, demoCustomers)
+  suppliers.value = await safeGet(`${API}/api/Suppliers`, demoSuppliers)
+  orders.value = await safeGet(`${API}/api/Orders`, [])
   payments.value = await safeGet(`${API}/api/Payments`, [])
   debts.value = await safeGet(`${API}/api/Debts`, [])
   outboxMessages.value = await safeGet(`${API}/api/OutboxMessages`, [])
 }
 
-function openPanel(panel) {
-  activePanel.value = panel
+// ===== HELPERS =====
+function openPage(page) {
+  activePage.value = page
 }
 
-function isActive(panel) {
-  return activePanel.value === panel
+function isActive(page) {
+  return activePage.value === page
 }
 
 function getNextId(list) {
   if (!list || list.length === 0) return 1
-  return Math.max(...list.map(item => Number(item.id || 0))) + 1
+
+  return Math.max(
+    ...list.map(item => Number(item.id || item.customerId || item.supplierId || item.orderId || item.paymentId || item.debtId || 0))
+  ) + 1
 }
 
-function totalRevenue() {
-  return orders.value.reduce((sum, o) => {
-    return sum + Number(o.finalAmount || o.totalAmount || 0)
-  }, 0)
+function productId(product) {
+  return Number(product.productId || product.id)
 }
 
-const paidOrders = computed(() => {
-  return orders.value.filter(o => {
-    const status = String(o.paymentStatus || o.orderStatus || '').toLowerCase()
-    return status === 'paid' || Number(o.status) === 2
-  }).length
+function productCode(product) {
+  return product.productCode || `SP${String(productId(product)).padStart(3, '0')}`
+}
+
+function productName(product) {
+  return product.productName || product.name || 'Chưa có tên'
+}
+
+function productCategory(product) {
+  return product.categoryName || product.category || 'Khác'
+}
+
+function productPrice(product) {
+  return Number(product.sellingPrice || product.price || 0)
+}
+
+function productStock(product) {
+  return Number(product.quantityAvailable ?? product.stock ?? 0)
+}
+
+function customerId(customer) {
+  return Number(customer.customerId || customer.id)
+}
+
+function customerName(customer) {
+  return customer.fullName || customer.name || 'Khách hàng'
+}
+
+function supplierId(supplier) {
+  return Number(supplier.supplierId || supplier.id)
+}
+
+function supplierName(supplier) {
+  return supplier.supplierName || supplier.name || 'Nhà cung cấp'
+}
+
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('vi-VN') + ' VNĐ'
+}
+
+function statusLabel(status) {
+  if (typeof status === 'string') return status
+
+  return ['Pending', 'Confirmed', 'Paid', 'Debt', 'Cancelled'][Number(status)] || 'Unknown'
+}
+
+function statusClass(status) {
+  const value = typeof status === 'string' ? status.toLowerCase() : Number(status)
+
+  if (value === 'paid' || value === 2 || value === 'confirmed' || value === 1) return 'status-success'
+  if (value === 'partial' || value === 'debt' || value === 3 || value === 'pending' || value === 0 || value === 'unpaid') return 'status-warning'
+  if (value === 'cancelled' || value === 4 || value === 'outofstock') return 'status-error'
+
+  return 'status-info'
+}
+
+function selectSearchProduct(product) {
+  searchText.value = productName(product)
+  selectedCategory.value = productCategory(product)
+  showSearchPanel.value = false
+}
+
+function closeSearchPanelLater() {
+  window.setTimeout(() => {
+    showSearchPanel.value = false
+  }, 160)
+}
+
+function clearSearchText() {
+  searchText.value = ''
+  selectedCategory.value = 'Tất cả'
+  showSearchPanel.value = true
+}
+
+// ===== COMPUTED =====
+const categories = computed(() => {
+  const values = new Set(products.value.map(productCategory))
+  return ['Tất cả', ...Array.from(values)]
 })
 
-const debtOrders = computed(() => {
-  return orders.value.filter(o => {
-    const status = String(o.paymentStatus || o.orderStatus || '').toLowerCase()
-    return Number(o.debtAmount || 0) > 0 || status === 'partial' || status === 'debt'
-  }).length
+const filteredProducts = computed(() => {
+  const keyword = searchText.value.trim().toLowerCase()
+
+  return products.value.filter(product => {
+    const matchCategory =
+      selectedCategory.value === 'Tất cả' || productCategory(product) === selectedCategory.value
+
+    const matchSearch =
+      !keyword ||
+      productName(product).toLowerCase().includes(keyword) ||
+      productCode(product).toLowerCase().includes(keyword)
+
+    return matchCategory && matchSearch
+  })
+})
+
+const searchSuggestions = computed(() => {
+  const keyword = searchText.value.trim().toLowerCase()
+
+  if (!keyword) return []
+
+  return products.value
+    .filter(product => {
+      return (
+        productName(product).toLowerCase().includes(keyword) ||
+        productCode(product).toLowerCase().includes(keyword) ||
+        productCategory(product).toLowerCase().includes(keyword)
+      )
+    })
+    .slice(0, 6)
+})
+
+const popularProducts = computed(() => {
+  return [...products.value]
+    .sort((a, b) => {
+      const soldA = Number(a.soldCount || a.totalSold || a.popularScore || 0)
+      const soldB = Number(b.soldCount || b.totalSold || b.popularScore || 0)
+
+      if (soldB !== soldA) return soldB - soldA
+
+      return productStock(b) - productStock(a)
+    })
+    .slice(0, 6)
+})
+
+const cartTotalQuantity = computed(() => {
+  return cart.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+})
+
+const cartTotal = computed(() => {
+  return cart.value.reduce((sum, item) => {
+    return sum + Number(item.unitPrice || 0) * Number(item.quantity || 0)
+  }, 0)
+})
+
+const finalAmount = computed(() => {
+  const value = cartTotal.value - Number(checkout.value.discountAmount || 0)
+  return value > 0 ? value : 0
+})
+
+const debtAmount = computed(() => {
+  const value = finalAmount.value - Number(checkout.value.paidAmount || 0)
+  return value > 0 ? value : 0
+})
+
+const totalRevenue = computed(() => {
+  return orders.value.reduce((sum, order) => sum + Number(order.finalAmount || order.totalAmount || 0), 0)
 })
 
 const totalDebt = computed(() => {
-  return debts.value.reduce((sum, d) => {
-    return sum + Number(d.remainingAmount || d.debtAmount || 0)
-  }, 0)
+  return debts.value.reduce((sum, debt) => sum + Number(debt.remainingAmount || debt.debtAmount || 0), 0)
 })
 
-const dashboardTotal = computed(() => {
-  const total = products.value.length + customers.value.length + orders.value.length + suppliers.value.length
-  return total === 0 ? 1 : total
+const myOrders = computed(() => {
+  if (!currentUser.value) return []
+
+  return orders.value.filter(order => Number(order.customerId) === Number(currentUser.value.customerId))
 })
 
-const dashboardChartStyle = computed(() => {
-  const pp = products.value.length / dashboardTotal.value * 100
-  const cp = customers.value.length / dashboardTotal.value * 100
-  const op = orders.value.length / dashboardTotal.value * 100
-  const sp = suppliers.value.length / dashboardTotal.value * 100
+// ===== AUTH =====
+function openAuth(mode = 'login') {
+  authMode.value = mode
+  authError.value = ''
+  showAuthModal.value = true
+}
 
-  const p1 = pp
-  const p2 = p1 + cp
-  const p3 = p2 + op
-  const p4 = p3 + sp
+function closeAuth() {
+  showAuthModal.value = false
+  authError.value = ''
+}
 
-  return {
-    background: `conic-gradient(
-      #1976d2 0% ${p1}%,
-      #2e7d32 ${p1}% ${p2}%,
-      #ed6c02 ${p2}% ${p3}%,
-      #0288d1 ${p3}% ${p4}%
-    )`
+async function registerCustomer() {
+  authError.value = ''
+
+  if (!registerForm.value.fullName.trim()) {
+    authError.value = 'Vui lòng nhập họ tên.'
+    return
   }
-})
 
-function productId(p) {
-  return p.productId || p.id
-}
+  if (!registerForm.value.phone.trim()) {
+    authError.value = 'Vui lòng nhập số điện thoại.'
+    return
+  }
 
-function productCode(p) {
-  return p.productCode || `SP${String(productId(p)).padStart(3, '0')}`
-}
+  if (!registerForm.value.password.trim()) {
+    authError.value = 'Vui lòng nhập mật khẩu.'
+    return
+  }
 
-function productName(p) {
-  return p.productName || p.name || 'Chưa có tên'
-}
+  const payload = {
+    name: registerForm.value.fullName,
+    fullName: registerForm.value.fullName,
+    phone: registerForm.value.phone,
+    email: registerForm.value.email,
+    address: registerForm.value.address,
+    debt: 0,
+    currentDebt: 0
+  }
 
-function productPrice(p) {
-  return Number(p.sellingPrice || p.price || 0)
-}
+  let createdCustomer = null
 
-function productStock(p) {
-  return Number(p.quantityAvailable ?? p.stock ?? 0)
-}
+  try {
+    const res = await axios.post(`${API}/api/Customers`, payload)
+    createdCustomer = res.data
+  } catch {
+    const id = getNextId(customers.value)
 
-function reduceProductStock(items) {
-  for (const item of items) {
-    const product = products.value.find(p => productId(p) === item.productId)
-    if (!product) continue
-
-    if (product.quantityAvailable !== undefined) {
-      product.quantityAvailable = Number(product.quantityAvailable || 0) - Number(item.quantity || 0)
-      if (product.quantityAvailable < 0) product.quantityAvailable = 0
-    } else if (product.stock !== undefined) {
-      product.stock = Number(product.stock || 0) - Number(item.quantity || 0)
-      if (product.stock < 0) product.stock = 0
+    createdCustomer = {
+      id,
+      customerId: id,
+      ...payload
     }
-
-    product.stockStatus = productStock(product) > 0 ? 'InStock' : 'OutOfStock'
   }
+
+  customers.value.push(createdCustomer)
+
+  currentUser.value = {
+    role: 'Customer',
+    customerId: customerId(createdCustomer),
+    fullName: customerName(createdCustomer),
+    phone: createdCustomer.phone,
+    email: createdCustomer.email,
+    address: createdCustomer.address
+  }
+
+  checkout.value.customerId = currentUser.value.customerId
+
+  registerForm.value = {
+    fullName: '',
+    phone: '',
+    email: '',
+    address: '',
+    password: ''
+  }
+
+  closeAuth()
 }
 
+function loginCustomer() {
+  authError.value = ''
+
+  if (!loginForm.value.phone.trim()) {
+    authError.value = 'Vui lòng nhập số điện thoại.'
+    return
+  }
+
+  const found = customers.value.find(customer => String(customer.phone) === String(loginForm.value.phone))
+
+  if (!found) {
+    authError.value = 'Không tìm thấy khách hàng. Vui lòng đăng ký.'
+    return
+  }
+
+  currentUser.value = {
+    role: 'Customer',
+    customerId: customerId(found),
+    fullName: customerName(found),
+    phone: found.phone,
+    email: found.email,
+    address: found.address
+  }
+
+  checkout.value.customerId = currentUser.value.customerId
+
+  loginForm.value = {
+    phone: '',
+    password: ''
+  }
+
+  closeAuth()
+}
+
+function logout() {
+  currentUser.value = null
+  checkout.value.customerId = null
+  openPage('shop')
+}
+
+// ===== CART =====
 function addToCart(product) {
   if (productStock(product) <= 0) {
-    alert('Sản phẩm đã hết hàng!')
+    alert('Sản phẩm đã hết hàng.')
     return
   }
 
@@ -195,7 +522,7 @@ function addToCart(product) {
 
   if (existed) {
     if (existed.quantity + 1 > productStock(product)) {
-      alert('Số lượng bán vượt quá tồn kho!')
+      alert('Số lượng mua không được vượt quá tồn kho.')
       return
     }
 
@@ -205,67 +532,77 @@ function addToCart(product) {
       productId: id,
       productCode: productCode(product),
       productName: productName(product),
+      categoryName: productCategory(product),
       unitPrice: productPrice(product),
       quantity: 1,
-      stock: productStock(product)
+      stock: productStock(product),
+      image: product.image || '📦'
     })
   }
+
+  cartOpen.value = true
 }
 
 function removeFromCart(id) {
   cart.value = cart.value.filter(item => item.productId !== id)
 }
 
-function updateCartQuantity(item) {
-  if (item.quantity < 1) item.quantity = 1
+function updateQuantity(item, value) {
+  const quantity = Number(value)
 
-  if (item.quantity > item.stock) {
-    alert('Số lượng bán không được vượt quá tồn kho!')
+  if (quantity < 1) {
+    item.quantity = 1
+    return
+  }
+
+  if (quantity > item.stock) {
+    alert('Số lượng mua không được vượt quá tồn kho.')
     item.quantity = item.stock
+    return
+  }
+
+  item.quantity = quantity
+}
+
+function reduceProductStock(items) {
+  for (const item of items) {
+    const product = products.value.find(p => productId(p) === Number(item.productId))
+    if (!product) continue
+
+    const remain = productStock(product) - Number(item.quantity || 0)
+
+    if (product.quantityAvailable !== undefined) {
+      product.quantityAvailable = remain > 0 ? remain : 0
+    } else {
+      product.stock = remain > 0 ? remain : 0
+    }
+
+    product.stockStatus = productStock(product) > 0 ? 'InStock' : 'OutOfStock'
   }
 }
 
-const cartTotal = computed(() => {
-  return cart.value.reduce((sum, item) => {
-    return sum + Number(item.unitPrice || 0) * Number(item.quantity || 0)
-  }, 0)
-})
-
-const finalAmount = computed(() => {
-  const discount = Number(checkout.value.discountAmount || 0)
-  const final = cartTotal.value - discount
-  return final < 0 ? 0 : final
-})
-
-const debtAmount = computed(() => {
-  const paid = Number(checkout.value.paidAmount || 0)
-  const debt = finalAmount.value - paid
-  return debt > 0 ? debt : 0
-})
-
-async function createCheckoutOrder() {
-  if (!checkout.value.customerId) {
-    alert('Vui lòng chọn khách hàng!')
-    return
-  }
-
+// ===== ORDER CHECKOUT =====
+async function createOrder() {
   if (cart.value.length === 0) {
-    alert('Vui lòng thêm sản phẩm vào đơn hàng!')
+    alert('Giỏ hàng đang trống.')
     return
   }
 
-  if (Number(checkout.value.discountAmount || 0) > cartTotal.value) {
-    alert('Chiết khấu không được lớn hơn tổng tiền!')
+  if (!currentUser.value) {
+    alert('Vui lòng đăng nhập hoặc đăng ký khách hàng trước khi đặt hàng.')
+    openAuth('login')
     return
   }
 
-  const selectedCustomer = customers.value.find(c => Number(c.id) === Number(checkout.value.customerId))
+  checkout.value.customerId = currentUser.value.customerId
+  checkout.value.discountAmount = 0
+  checkout.value.paidAmount = cartTotal.value
 
   const payload = {
-    customerId: Number(checkout.value.customerId),
-    discountAmount: Number(checkout.value.discountAmount || 0),
+    customerId: Number(currentUser.value.customerId),
+    discountAmount: 0,
     paymentMethod: checkout.value.paymentMethod,
-    paidAmount: Number(checkout.value.paidAmount || 0),
+    paidAmount: cartTotal.value,
     items: cart.value.map(item => ({
       productId: item.productId,
       productCode: item.productCode,
@@ -286,14 +623,14 @@ async function createCheckoutOrder() {
       const res = await axios.post(`${API}/api/Orders`, {
         customerId: payload.customerId,
         totalAmount: cartTotal.value,
-        discountAmount: payload.discountAmount,
-        finalAmount: finalAmount.value,
-        paidAmount: payload.paidAmount,
-        debtAmount: debtAmount.value,
+        discountAmount: 0,
+        finalAmount: cartTotal.value,
+        paidAmount: cartTotal.value,
+        debtAmount: 0,
         paymentMethod: payload.paymentMethod,
-        paymentStatus: debtAmount.value > 0 ? 'Partial' : 'Paid',
-        orderStatus: debtAmount.value > 0 ? 'Debt' : 'Paid',
-        status: debtAmount.value > 0 ? 3 : 2,
+        paymentStatus: 'Paid',
+        orderStatus: 'Paid',
+        status: 2,
         items: payload.items
       })
 
@@ -304,55 +641,43 @@ async function createCheckoutOrder() {
       createdOrder = {
         id: getNextId(orders.value),
         customerId: payload.customerId,
-        customer: selectedCustomer,
+        customerName: currentUser.value.fullName,
+        customer: {
+          id: payload.customerId,
+          name: currentUser.value.fullName,
+          phone: currentUser.value.phone
+        },
         orderDate: new Date().toISOString(),
         totalAmount: cartTotal.value,
-        discountAmount: payload.discountAmount,
-        finalAmount: finalAmount.value,
-        paidAmount: payload.paidAmount,
-        debtAmount: debtAmount.value,
+        discountAmount: 0,
+        finalAmount: cartTotal.value,
+        paidAmount: cartTotal.value,
+        debtAmount: 0,
         paymentMethod: payload.paymentMethod,
-        paymentStatus: debtAmount.value > 0 ? 'Partial' : 'Paid',
-        orderStatus: debtAmount.value > 0 ? 'Debt' : 'Paid',
-        status: debtAmount.value > 0 ? 3 : 2,
+        paymentStatus: 'Paid',
+        orderStatus: 'Paid',
+        status: 2,
         items: payload.items
       }
     }
 
     orders.value.push(createdOrder)
 
+    const orderId = createdOrder.id || createdOrder.orderId || getNextId(orders.value)
     const paymentId = getNextId(payments.value)
 
     payments.value.push({
       id: paymentId,
-      orderId: createdOrder.id,
+      orderId,
       paymentCode: `PAY${String(paymentId).padStart(6, '0')}`,
       paymentMethod: payload.paymentMethod,
       amount: payload.paidAmount,
-      paymentStatus: debtAmount.value > 0 ? 'Partial' : 'Paid',
+      paymentStatus: 'Paid',
       paymentDate: new Date().toISOString()
     })
 
-    if (debtAmount.value > 0) {
-      const debtId = getNextId(debts.value)
-
-      debts.value.push({
-        id: debtId,
-        customerId: payload.customerId,
-        customer: selectedCustomer,
-        orderId: createdOrder.id,
-        debtAmount: debtAmount.value,
-        paidAmount: payload.paidAmount,
-        remainingAmount: debtAmount.value,
-        debtStatus: 'Unpaid',
-        createdAt: new Date().toISOString()
-      })
-    }
-
-    const outboxId = getNextId(outboxMessages.value)
-
     outboxMessages.value.push({
-      id: outboxId,
+      id: getNextId(outboxMessages.value),
       eventName: 'order.created',
       status: 'Pending',
       createdAt: new Date().toISOString()
@@ -360,47 +685,35 @@ async function createCheckoutOrder() {
 
     reduceProductStock(payload.items)
 
-    alert('Tạo đơn hàng thành công!')
+    alert('Đặt hàng thành công.')
 
     cart.value = []
+    cartOpen.value = false
+
     checkout.value = {
-      customerId: '',
+      customerId: currentUser.value.customerId,
       discountAmount: 0,
       paymentMethod: 'Cash',
       paidAmount: 0
     }
 
-    openPanel('orders')
-  } catch (err) {
-    console.log(err)
-    alert('Lỗi khi tạo đơn hàng!')
+    openPage('myOrders')
+  } catch (error) {
+    console.log(error)
+    alert('Lỗi khi tạo đơn hàng.')
   }
 }
 
-// ===== CUSTOMERS =====
-function addCustomer() {
-  editingCustomer.value = null
-
-  customerForm.value = {
-    name: '',
-    phone: '',
-    email: '',
-    address: '',
-    debt: 0
-  }
-
-  showCustomerModal.value = true
-}
-
-function editCustomer(customer) {
+// ===== CUSTOMER CRUD =====
+function openCustomerModal(customer = null) {
   editingCustomer.value = customer
 
   customerForm.value = {
-    name: customer.name || '',
-    phone: customer.phone || '',
-    email: customer.email || '',
-    address: customer.address || '',
-    debt: Number(customer.debt || customer.currentDebt || 0)
+    name: customer ? customerName(customer) : '',
+    phone: customer?.phone || '',
+    email: customer?.email || '',
+    address: customer?.address || '',
+    debt: Number(customer?.debt || customer?.currentDebt || 0)
   }
 
   showCustomerModal.value = true
@@ -413,583 +726,538 @@ function closeCustomerModal() {
 
 async function saveCustomer() {
   if (!customerForm.value.name.trim()) {
-    alert('Vui lòng nhập tên khách hàng!')
+    alert('Vui lòng nhập tên khách hàng.')
     return
   }
 
   const payload = {
     name: customerForm.value.name,
+    fullName: customerForm.value.name,
     phone: customerForm.value.phone,
     email: customerForm.value.email,
     address: customerForm.value.address,
-    debt: Number(customerForm.value.debt || 0)
+    debt: Number(customerForm.value.debt || 0),
+    currentDebt: Number(customerForm.value.debt || 0)
   }
 
-  try {
-    if (editingCustomer.value) {
-      const res = await axios.put(`${API}/api/Customers/${editingCustomer.value.id}`, {
+  if (editingCustomer.value) {
+    try {
+      const res = await axios.put(`${API}/api/Customers/${customerId(editingCustomer.value)}`, {
         ...editingCustomer.value,
         ...payload
       })
 
       Object.assign(editingCustomer.value, res.data)
-    } else {
+    } catch {
+      Object.assign(editingCustomer.value, payload)
+    }
+  } else {
+    try {
       const res = await axios.post(`${API}/api/Customers`, payload)
       customers.value.push(res.data)
-    }
-
-    closeCustomerModal()
-  } catch {
-    if (editingCustomer.value) {
-      Object.assign(editingCustomer.value, payload)
-    } else {
+    } catch {
       customers.value.push({
         id: getNextId(customers.value),
         ...payload
       })
     }
-
-    closeCustomerModal()
   }
+
+  closeCustomerModal()
 }
-async function deleteCustomer(id) {
-  if (!window.confirm('Bạn có chắc muốn xóa khách hàng này không?')) return
+
+// ===== SUPPLIER CRUD =====
+function openSupplierModal(supplier = null) {
+  editingSupplier.value = supplier
+
+  supplierForm.value = {
+    name: supplier ? supplierName(supplier) : '',
+    contactPerson: supplier?.contactPerson || '',
+    phone: supplier?.phone || '',
+    email: supplier?.email || '',
+    address: supplier?.address || '',
+    status: supplier?.status || 'Active'
+  }
+
+  showSupplierModal.value = true
+}
+
+function closeSupplierModal() {
+  showSupplierModal.value = false
+  editingSupplier.value = null
+}
+
+async function saveSupplier() {
+  if (!supplierForm.value.name.trim()) {
+    alert('Vui lòng nhập tên nhà cung cấp.')
+    return
+  }
+
+  const payload = {
+    name: supplierForm.value.name,
+    supplierName: supplierForm.value.name,
+    contactPerson: supplierForm.value.contactPerson,
+    phone: supplierForm.value.phone,
+    email: supplierForm.value.email,
+    address: supplierForm.value.address,
+    status: supplierForm.value.status
+  }
+
+  if (editingSupplier.value) {
+    try {
+      const res = await axios.put(`${API}/api/Suppliers/${supplierId(editingSupplier.value)}`, {
+        ...editingSupplier.value,
+        ...payload
+      })
+
+      Object.assign(editingSupplier.value, res.data)
+    } catch {
+      Object.assign(editingSupplier.value, payload)
+    }
+  } else {
+    try {
+      const res = await axios.post(`${API}/api/Suppliers`, payload)
+      suppliers.value.push(res.data)
+    } catch {
+      suppliers.value.push({
+        id: getNextId(suppliers.value),
+        ...payload
+      })
+    }
+  }
+
+  closeSupplierModal()
+}
+
+// ===== DEBT PAYMENT =====
+function openDebtModal(debt) {
+  selectedDebt.value = debt
+  debtPayForm.value = {
+    amount: Number(debt.remainingAmount || debt.debtAmount || 0),
+    paymentMethod: 'Cash'
+  }
+  showDebtModal.value = true
+}
+
+function closeDebtModal() {
+  selectedDebt.value = null
+  showDebtModal.value = false
+}
+
+async function payDebt() {
+  if (!selectedDebt.value) return
+
+  const amount = Number(debtPayForm.value.amount || 0)
+
+  if (amount <= 0) {
+    alert('Số tiền trả nợ phải lớn hơn 0.')
+    return
+  }
+
+  const remainingBefore = Number(selectedDebt.value.remainingAmount || selectedDebt.value.debtAmount || 0)
+
+  if (amount > remainingBefore) {
+    alert('Số tiền trả không được lớn hơn số tiền còn nợ.')
+    return
+  }
 
   try {
-    await axios.delete(`${API}/api/Customers/${id}`)
-    customers.value = customers.value.filter(item => item.id !== id)
-  } catch {
-    customers.value = customers.value.filter(item => item.id !== id)
-  }
-}
-
-// ===== ORDERS =====
-function addOrder() {
-  openPanel('sales')
-}
-
-async function editOrder(order) {
-  const statusInput = window.prompt('Trạng thái (0=Pending, 1=Confirmed, 2=Paid, 3=Debt, 4=Cancelled):', order.status ?? 0)
-  if (statusInput === null) return
-
-  try {
-    const res = await axios.put(`${API}/api/Orders/${order.id}`, {
-      ...order,
-      status: Number(statusInput)
+    await axios.post(`${API}/api/Debts/${selectedDebt.value.id || selectedDebt.value.debtId}/pay`, {
+      amount,
+      paymentMethod: debtPayForm.value.paymentMethod
     })
 
-    Object.assign(order, res.data)
-  } catch {
-    order.status = Number(statusInput)
-  }
-}
-
-async function deleteOrder(id) {
-  if (!window.confirm('Bạn có chắc muốn xóa đơn hàng này không?')) return
-
-  try {
-    await axios.delete(`${API}/api/Orders/${id}`)
-    orders.value = orders.value.filter(item => item.id !== id)
-  } catch {
-    orders.value = orders.value.filter(item => item.id !== id)
-  }
-}
-
-// ===== SUPPLIERS =====
-async function addSupplier() {
-  const name = window.prompt('Nhập tên nhà cung cấp:')
-  if (!name) return
-
-  const phone = window.prompt('Nhập số điện thoại:') || ''
-  const email = window.prompt('Nhập email:') || ''
-  const address = window.prompt('Nhập địa chỉ:') || ''
-  const contactPerson = window.prompt('Nhập tên người liên hệ:') || ''
-
-  try {
-    const res = await axios.post(`${API}/api/Suppliers`, {
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
-
-    suppliers.value.push(res.data)
-  } catch {
-    suppliers.value.push({
-      id: getNextId(suppliers.value),
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
-  }
-}
-
-async function editSupplier(supplier) {
-  const name = window.prompt('Sửa tên nhà cung cấp:', supplier.name)
-  if (!name) return
-
-  const phone = window.prompt('Sửa số điện thoại:', supplier.phone) || supplier.phone
-  const email = window.prompt('Sửa email:', supplier.email) || supplier.email
-  const address = window.prompt('Sửa địa chỉ:', supplier.address) || supplier.address
-  const contactPerson = window.prompt('Sửa người liên hệ:', supplier.contactPerson) || supplier.contactPerson
-
-  try {
-    const res = await axios.put(`${API}/api/Suppliers/${supplier.id}`, {
-      ...supplier,
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
-
-    Object.assign(supplier, res.data)
-  } catch {
-    Object.assign(supplier, {
-      name,
-      phone,
-      email,
-      address,
-      contactPerson
-    })
-  }
-}
-
-async function deleteSupplier(id) {
-  if (!window.confirm('Bạn có chắc muốn xóa nhà cung cấp này không?')) return
-
-  try {
-    await axios.delete(`${API}/api/Suppliers/${id}`)
-    suppliers.value = suppliers.value.filter(item => item.id !== id)
-  } catch {
-    suppliers.value = suppliers.value.filter(item => item.id !== id)
-  }
-}
-
-// ===== DEBTS =====
-async function payDebt(debt) {
-  const amount = Number(window.prompt('Nhập số tiền khách trả:', debt.remainingAmount || debt.debtAmount || 0) || 0)
-  if (amount <= 0) return
-
-  try {
-    await axios.post(`${API}/api/Debts/${debt.id}/pay`, { amount })
     await loadAll()
   } catch {
-    const remaining = Number(debt.remainingAmount || debt.debtAmount || 0) - amount
-
-    debt.remainingAmount = remaining > 0 ? remaining : 0
-    debt.paidAmount = Number(debt.paidAmount || 0) + amount
-    debt.debtStatus = debt.remainingAmount === 0 ? 'Paid' : 'Partial'
+    const remaining = remainingBefore - amount
+    selectedDebt.value.remainingAmount = remaining > 0 ? remaining : 0
+    selectedDebt.value.paidAmount = Number(selectedDebt.value.paidAmount || 0) + amount
+    selectedDebt.value.debtStatus = selectedDebt.value.remainingAmount === 0 ? 'Paid' : 'Partial'
 
     payments.value.push({
       id: getNextId(payments.value),
-      orderId: debt.orderId,
+      orderId: selectedDebt.value.orderId,
       paymentCode: `PAY${String(getNextId(payments.value)).padStart(6, '0')}`,
-      paymentMethod: 'Cash',
+      paymentMethod: debtPayForm.value.paymentMethod,
       amount,
-      paymentStatus: debt.remainingAmount === 0 ? 'Paid' : 'Partial',
+      paymentStatus: selectedDebt.value.remainingAmount === 0 ? 'Paid' : 'Partial',
       paymentDate: new Date().toISOString()
     })
   }
-}
 
-function orderStatusValue(order) {
-  if (order.status !== undefined && order.status !== null) return order.status
-  return order.orderStatus || order.paymentStatus || 'Pending'
-}
-
-function statusLabel(s) {
-  if (typeof s === 'string') return s
-
-  return ['Pending', 'Confirmed', 'Paid', 'Debt', 'Cancelled'][s] ?? 'Unknown'
-}
-
-function statusClass(s) {
-  const value = typeof s === 'string' ? s.toLowerCase() : s
-
-  if (value === 0 || value === 'pending' || value === 'unpaid') return 'status-pending'
-  if (value === 1 || value === 'confirmed') return 'status-confirmed'
-  if (value === 2 || value === 'paid') return 'status-confirmed'
-  if (value === 3 || value === 'debt' || value === 'partial') return 'status-pending'
-  if (value === 4 || value === 'cancelled' || value === 'outofstock') return 'status-cancelled'
-
-  return ''
+  closeDebtModal()
 }
 
 onMounted(loadAll)
 </script>
 
 <template>
-  <div class="layout">
-    <!-- SIDEBAR -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-logo">🏪</div>
-        <div>
-          <h2>RetailERP</h2>
-          <p>Sales & Inventory</p>
+  <div class="app">
+    <!-- HEADER -->
+    <header class="site-header">
+      <div class="header-top">
+        <div class="header-top-inner">
+          <span>✅ Order & Sales Service</span>
+          <span>🚚 Tạo đơn nhanh</span>
+          <span>📦 Dữ liệu sản phẩm từ Nhóm 1</span>
+          <span>🔄 Event order.created gửi Nhóm 3</span>
         </div>
       </div>
 
-      <nav>
-        <div class="menu-group">
-          <div class="menu-title">TRANG CHỦ</div>
-          <button :class="{ active: isActive('dashboard') }" @click="openPanel('dashboard')">
-            📊 Tổng quan hệ thống
-          </button>
+      <div class="header-main">
+        <button class="logo" @click="openPage('shop')">
+          <span class="logo-icon">R</span>
+          <span>RetailERP</span>
+        </button>
+
+        <button class="header-action category-button">
+          ☰ Danh mục
+        </button>
+
+        <button class="header-action location-button">
+          📍 Hà Nội
+        </button>
+
+        <div class="search-box search-wrapper">
+          <span>🔎</span>
+          <input
+            v-model="searchText"
+            type="text"
+            placeholder="Bạn muốn mua gì hôm nay?"
+            @focus="showSearchPanel = true"
+            @input="showSearchPanel = true"
+            @blur="closeSearchPanelLater"
+          />
+          <button v-if="searchText" class="search-clear" @mousedown.prevent="clearSearchText">✕</button>
+
+          <div v-if="showSearchPanel" class="search-panel">
+            <div v-if="searchText.trim() && searchSuggestions.length > 0" class="search-section">
+              <div class="search-title">
+                <span>🔎 Kết quả từ kho sản phẩm Nhóm 1</span>
+                <b>{{ searchSuggestions.length }} gợi ý</b>
+              </div>
+
+              <button
+                v-for="product in searchSuggestions"
+                :key="productId(product)"
+                class="search-item"
+                @mousedown.prevent="selectSearchProduct(product)"
+              >
+                <span class="search-icon">{{ product.image || '📦' }}</span>
+                <span class="search-info">
+                  <b>{{ productName(product) }}</b>
+                  <small>{{ productCode(product) }} · {{ productCategory(product) }} · Còn {{ productStock(product) }}</small>
+                </span>
+                <strong>{{ formatMoney(productPrice(product)) }}</strong>
+              </button>
+            </div>
+
+            <div v-else-if="searchText.trim() && searchSuggestions.length === 0" class="search-empty">
+              <div class="empty-mini-icon">🔍</div>
+              <b>Không có sản phẩm “{{ searchText }}” trong kho Nhóm 1</b>
+              <p>Hãy thử nhập tên khác, mã sản phẩm khác hoặc chọn danh mục bên dưới.</p>
+            </div>
+
+            <div v-else class="search-section">
+              <div class="search-title">
+                <span>🔥 Sản phẩm được mua nhiều / nên gợi ý</span>
+                <b>Dựa trên kho Nhóm 1</b>
+              </div>
+
+              <button
+                v-for="product in popularProducts"
+                :key="productId(product)"
+                class="search-item"
+                @mousedown.prevent="selectSearchProduct(product)"
+              >
+                <span class="search-icon">{{ product.image || '📦' }}</span>
+                <span class="search-info">
+                  <b>{{ productName(product) }}</b>
+                  <small>{{ productCode(product) }} · {{ productCategory(product) }} · Còn {{ productStock(product) }}</small>
+                </span>
+                <strong>{{ formatMoney(productPrice(product)) }}</strong>
+              </button>
+            </div>
+
+            <div class="search-categories">
+              <button
+                v-for="category in categories"
+                :key="category"
+                @mousedown.prevent="selectedCategory = category; showSearchPanel = false"
+              >
+                {{ category }}
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div class="menu-group">
-          <div class="menu-title">NHÓM 1 - KHO & SẢN PHẨM</div>
-          <button :class="{ active: isActive('products') }" @click="openPanel('products')">
-            📦 Sản phẩm & tồn kho
+        <button class="header-action cart-button" @click="cartOpen = true">
+          🛒 Giỏ hàng
+          <b v-if="cartTotalQuantity > 0">{{ cartTotalQuantity }}</b>
+        </button>
+
+        <button v-if="!currentUser" class="header-action login-button" @click="openAuth('login')">
+          Đăng nhập 👤
+        </button>
+
+        <div v-else class="user-actions">
+          <button class="header-action" @click="openPage('myOrders')">
+            👤 {{ currentUser.fullName }}
+          </button>
+          <button class="header-action logout-button" @click="logout">
+            Đăng xuất
           </button>
         </div>
+      </div>
 
-        <div class="menu-group">
-          <div class="menu-title">NHÓM 2 - BÁN HÀNG</div>
-          <button :class="{ active: isActive('sales') }" @click="openPanel('sales')">
-            🧾 Bán hàng
-          </button>
+      <nav class="quick-nav customer-nav">
+        <button :class="{ active: isActive('shop') }" @click="openPage('shop')">
+          🏠 Trang chủ
+        </button>
 
-          <button :class="{ active: isActive('orders') }" @click="openPanel('orders')">
-            🛒 Đơn hàng
-          </button>
+        <button :class="{ active: isActive('shop') && selectedCategory !== 'Tất cả' }" @click="openPage('shop')">
+          🗂️ Danh mục
+        </button>
 
-          <button :class="{ active: isActive('customers') }" @click="openPanel('customers')">
-            👥 Khách hàng
-          </button>
+        <button @click="cartOpen = true">
+          🛒 Giỏ hàng
+          <b v-if="cartTotalQuantity > 0">{{ cartTotalQuantity }}</b>
+        </button>
 
-          <button :class="{ active: isActive('suppliers') }" @click="openPanel('suppliers')">
-            🏬 Nhà cung cấp
-          </button>
+        <button :class="{ active: isActive('myOrders') }" @click="openPage('myOrders')">
+          📦 Đơn mua
+        </button>
 
-          <button :class="{ active: isActive('payments') }" @click="openPanel('payments')">
-            💳 Thanh toán
-          </button>
+        <button @click="currentUser ? openPage('myOrders') : openAuth('login')">
+          🔎 Tra cứu đơn
+        </button>
 
-          <button :class="{ active: isActive('debts') }" @click="openPanel('debts')">
-            💰 Công nợ
-          </button>
-
-          <button :class="{ active: isActive('integration') }" @click="openPanel('integration')">
-            🔄 Đồng bộ dữ liệu
-          </button>
-        </div>
-
-        <div class="menu-group">
-          <div class="menu-title">NHÓM 3 - USER & REPORT</div>
-          <button :class="{ active: isActive('reports') }" @click="openPanel('reports')">
-            📈 Báo cáo tổng hợp
-          </button>
-        </div>
-
-        <div class="menu-group">
-          <div class="menu-title">HỆ THỐNG</div>
-          <button :class="{ active: isActive('settings') }" @click="openPanel('settings')">
-            ⚙️ Cài đặt
-          </button>
-
-          <button class="logout">
-            🚪 Đăng xuất
-          </button>
-        </div>
+        <button @click="currentUser ? openPage('myOrders') : openAuth('login')">
+          👤 Tài khoản
+        </button>
       </nav>
-    </aside>
+    </header>
 
-    <!-- MAIN -->
-    <main class="main">
-      <header class="topbar">
-        <div>
-          <h1>Hệ thống quản lý bán hàng & kho hàng</h1>
-          <p class="subtitle">Microservices · ASP.NET Core · VueJS · SQL Server</p>
-        </div>
-
-        <div class="topbar-right">
-          <button class="refresh" @click="loadAll">
-            🔄 Refresh
+    <!-- SHOP PAGE -->
+    <main v-if="activePage === 'shop'" class="page shop-page">
+      <section class="home-layout">
+        <aside class="category-list">
+          <button
+            v-for="category in categories"
+            :key="category"
+            :class="{ active: selectedCategory === category }"
+            @click="selectedCategory = category"
+          >
+            <span>{{ category === 'Tất cả' ? '🏷️' : category === 'Gia dụng' ? '🏠' : category === 'Điện tử' ? '💻' : category === 'Thực phẩm' ? '🥫' : category === 'Thời trang' ? '👕' : '📦' }}</span>
+            <b>{{ category }}</b>
+            <em>›</em>
           </button>
+        </aside>
 
-          <div class="user-box">
-            👨‍💻 Admin
+        <section class="hero-banner">
+          <div class="hero-tabs">
+            <span>ORDER & SALES</span>
+            <span>CHECKOUT</span>
+            <span>ORDERDB</span>
           </div>
+
+          <div class="hero-content">
+            <p class="tag">NHÓM 2 — TRANG BÁN HÀNG MINI</p>
+            <h1>Chọn sản phẩm, tạo giỏ hàng và đặt đơn ngay</h1>
+            <p>
+              Sản phẩm lấy từ ProductStockCaches/Nhóm 1. Khi khách tạo đơn, dữ liệu được lưu vào OrderDB và phát sinh event order.created.
+            </p>
+
+            <div class="hero-actions">
+              <button @click="cartOpen = true">Xem giỏ hàng</button>
+              <button class="ghost-btn" @click="openPage('integration')">Xem đồng bộ</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="member-card">
+          <h3>👋 Tài khoản khách hàng</h3>
+
+          <template v-if="!currentUser">
+            <p>Đăng nhập hoặc đăng ký để đặt hàng và xem lịch sử đơn.</p>
+            <button @click="openAuth('login')">Đăng nhập</button>
+            <button class="ghost-btn" @click="openAuth('register')">Đăng ký</button>
+          </template>
+
+          <template v-else>
+            <p><b>{{ currentUser.fullName }}</b></p>
+            <p>{{ currentUser.phone }}</p>
+            <button @click="openPage('myOrders')">Đơn của tôi</button>
+          </template>
+
+          <div class="mini-service">
+            <span>📦 {{ products.length }} sản phẩm</span>
+            <span>🧾 {{ orders.length }} đơn hàng</span>
+            <span>💰 {{ formatMoney(totalDebt) }} công nợ</span>
+          </div>
+
+          <div class="admin-shortcuts">
+            <p>Quản trị Nhóm 2</p>
+            <button @click="openPage('orders')">Quản lý đơn</button>
+            <button @click="openPage('customers')">Khách hàng</button>
+            <button @click="openPage('suppliers')">Nhà cung cấp</button>
+            <button @click="openPage('payments')">Thanh toán</button>
+            <button @click="openPage('debts')">Công nợ</button>
+            <button @click="openPage('integration')">Đồng bộ</button>
+          </div>
+        </aside>
+      </section>
+
+      <section class="promo-strip">
+        <div>
+          <b>Sales Checkout</b>
+          <span>Tính tổng tiền, chiết khấu, thanh toán, công nợ</span>
         </div>
-      </header>
-
-      <!-- DASHBOARD -->
-      <section v-if="activePanel === 'dashboard'">
-        <div class="stats">
-          <div class="stat primary">
-            <span>Sản phẩm / tồn kho</span>
-            <b>{{ products.length }}</b>
-          </div>
-
-          <div class="stat success">
-            <span>Khách hàng</span>
-            <b>{{ customers.length }}</b>
-          </div>
-
-          <div class="stat warning">
-            <span>Đơn hàng</span>
-            <b>{{ orders.length }}</b>
-          </div>
-
-          <div class="stat info">
-            <span>Nhà cung cấp</span>
-            <b>{{ suppliers.length }}</b>
-          </div>
+        <div>
+          <b>stock.updated</b>
+          <span>Nhận tồn kho từ Nhóm 1</span>
         </div>
-
-        <div class="dashboard-box">
-          <div class="panel-head">
-            <div>
-              <h2>📊 Tổng quan hệ thống</h2>
-              <p>Trang chủ hiển thị tổng quan cho cả 3 nhóm microservices.</p>
-            </div>
-          </div>
-
-          <div class="chart-section">
-            <div class="pie-chart" :style="dashboardChartStyle">
-              <div class="pie-center">
-                <strong>{{ dashboardTotal }}</strong>
-                <span>Tổng mục</span>
-              </div>
-            </div>
-
-            <div class="chart-legend">
-              <div class="legend-item">
-                <span class="legend-color product"></span>
-                <p>Nhóm 1 - Sản phẩm & tồn kho</p>
-                <b>{{ products.length }}</b>
-              </div>
-
-              <div class="legend-item">
-                <span class="legend-color customer"></span>
-                <p>Nhóm 2 - Khách hàng</p>
-                <b>{{ customers.length }}</b>
-              </div>
-
-              <div class="legend-item">
-                <span class="legend-color order"></span>
-                <p>Nhóm 2 - Đơn hàng</p>
-                <b>{{ orders.length }}</b>
-              </div>
-
-              <div class="legend-item">
-                <span class="legend-color supplier"></span>
-                <p>Nhóm 2 - Nhà cung cấp</p>
-                <b>{{ suppliers.length }}</b>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="dashboard-box">
-          <h2>🏗️ Kiến trúc 3 nhóm microservices</h2>
-
-          <div class="arch-grid">
-            <div class="arch-card primary-card">
-              <h3>Nhóm 1 — Product & Inventory</h3>
-              <p>Quản lý sản phẩm, danh mục, tồn kho, nhập kho và phát event stock.updated.</p>
-            </div>
-
-            <div class="arch-card success-card">
-              <h3>Nhóm 2 — Order & Sales</h3>
-              <p>Tạo đơn bán hàng, quản lý khách hàng, thanh toán, công nợ và phát event order.created.</p>
-            </div>
-
-            <div class="arch-card info-card">
-              <h3>Nhóm 3 — User & Report</h3>
-              <p>JWT login, phân quyền, báo cáo doanh thu và thống kê tổng hợp.</p>
-            </div>
-          </div>
+        <div>
+          <b>order.created</b>
+          <span>Gửi đơn hàng sang Nhóm 3</span>
         </div>
       </section>
 
-      <!-- PRODUCTS -->
-      <section v-if="activePanel === 'products'" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>📦 Sản phẩm & tồn kho</h2>
-            <p>Dữ liệu thuộc Nhóm 1. Nhóm 2 chỉ dùng để kiểm tra hàng còn hay hết khi bán hàng.</p>
-          </div>
+      <section class="section-head">
+        <div>
+          <h2>Sản phẩm đang bán</h2>
+          <p>Đang lọc: <b>{{ selectedCategory }}</b> · Tìm thấy {{ filteredProducts.length }} sản phẩm</p>
         </div>
 
-        <table>
+        <button class="outline-btn" @click="loadAll">
+          Làm mới dữ liệu
+        </button>
+      </section>
+
+      <section class="product-grid">
+        <article v-for="product in filteredProducts" :key="productId(product)" class="product-card">
+          <div class="product-image">{{ product.image || '📦' }}</div>
+
+          <div class="product-meta">
+            <span>{{ productCategory(product) }}</span>
+            <span>{{ productCode(product) }}</span>
+          </div>
+
+          <h3>{{ productName(product) }}</h3>
+
+          <p class="price">{{ formatMoney(productPrice(product)) }}</p>
+
+          <p class="stock" :class="productStock(product) > 0 ? 'in-stock' : 'out-stock'">
+            {{ productStock(product) > 0 ? `Còn ${productStock(product)} sản phẩm` : 'Hết hàng' }}
+          </p>
+
+          <button :disabled="productStock(product) <= 0" @click="addToCart(product)">
+            + Thêm vào giỏ
+          </button>
+        </article>
+      </section>
+    </main>
+
+    <!-- MY ORDERS -->
+    <main v-if="activePage === 'myOrders'" class="page">
+      <section class="panel">
+        <h2>Đơn hàng của tôi</h2>
+        <p v-if="!currentUser">Bạn cần đăng nhập để xem đơn hàng của mình.</p>
+
+        <table v-else>
           <thead>
             <tr>
-              <th>Mã SP</th>
-              <th>Tên sản phẩm</th>
-              <th>Giá bán</th>
-              <th>Tồn kho</th>
+              <th>Mã đơn</th>
+              <th>Ngày tạo</th>
+              <th>Thành tiền</th>
+              <th>Đã trả</th>
+              <th>Còn nợ</th>
               <th>Trạng thái</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="p in products" :key="productId(p)">
-              <td>{{ productCode(p) }}</td>
-              <td>{{ productName(p) }}</td>
-              <td>{{ productPrice(p).toLocaleString() }} VNĐ</td>
-              <td>{{ productStock(p) }}</td>
+            <tr v-for="order in myOrders" :key="order.id || order.orderId">
+              <td>{{ order.orderCode || 'ORD' + (order.id || order.orderId) }}</td>
+              <td>{{ order.orderDate ? new Date(order.orderDate).toLocaleString('vi-VN') : '' }}</td>
+              <td>{{ formatMoney(order.finalAmount || order.totalAmount) }}</td>
+              <td>{{ formatMoney(order.paidAmount) }}</td>
+              <td>{{ formatMoney(order.debtAmount) }}</td>
               <td>
-                <span :class="productStock(p) > 0 ? 'status-confirmed' : 'status-cancelled'">
-                  {{ productStock(p) > 0 ? 'Còn hàng' : 'Hết hàng' }}
+                <span :class="statusClass(order.orderStatus || order.paymentStatus || order.status)">
+                  {{ statusLabel(order.orderStatus || order.paymentStatus || order.status) }}
                 </span>
               </td>
             </tr>
           </tbody>
         </table>
       </section>
+    </main>
 
-      <!-- SALES -->
-      <section v-if="activePanel === 'sales'" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>🧾 Bán hàng</h2>
-            <p>Tạo đơn bán hàng, tính tổng tiền, áp dụng chiết khấu và ghi nhận thanh toán.</p>
-          </div>
+    <!-- ORDERS -->
+    <main v-if="activePage === 'orders'" class="page">
+      <section class="stats">
+        <div class="stat-card">
+          <span>Tổng đơn hàng</span>
+          <b>{{ orders.length }}</b>
         </div>
 
-        <div class="sales-grid">
-          <div>
-            <h3>Danh sách sản phẩm</h3>
+        <div class="stat-card">
+          <span>Doanh thu</span>
+          <b>{{ formatMoney(totalRevenue) }}</b>
+        </div>
 
-            <table>
-              <thead>
-                <tr>
-                  <th>Mã SP</th>
-                  <th>Tên sản phẩm</th>
-                  <th>Giá</th>
-                  <th>Tồn</th>
-                  <th>Chọn</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr v-for="p in products" :key="productId(p)">
-                  <td>{{ productCode(p) }}</td>
-                  <td>{{ productName(p) }}</td>
-                  <td>{{ productPrice(p).toLocaleString() }} VNĐ</td>
-                  <td>{{ productStock(p) }}</td>
-                  <td>
-                    <button :disabled="productStock(p) <= 0" @click="addToCart(p)">
-                      + Thêm
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div>
-            <h3>Giỏ hàng / đơn bán</h3>
-
-            <div class="form-box">
-              <label>Khách hàng</label>
-              <select v-model="checkout.customerId">
-                <option value="">-- Chọn khách hàng --</option>
-                <option v-for="c in customers" :key="c.id" :value="c.id">
-                  {{ c.name }} - {{ c.phone }}
-                </option>
-              </select>
-
-              <label>Chiết khấu</label>
-              <input type="number" v-model.number="checkout.discountAmount" min="0" />
-
-              <label>Phương thức thanh toán</label>
-              <select v-model="checkout.paymentMethod">
-                <option value="Cash">Tiền mặt</option>
-                <option value="BankTransfer">Chuyển khoản</option>
-                <option value="EWallet">Ví điện tử</option>
-                <option value="QR">QR</option>
-              </select>
-
-              <label>Số tiền khách trả</label>
-              <input type="number" v-model.number="checkout.paidAmount" min="0" />
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  <th>Sản phẩm</th>
-                  <th>SL</th>
-                  <th>Đơn giá</th>
-                  <th>Thành tiền</th>
-                  <th>Xóa</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr v-for="item in cart" :key="item.productId">
-                  <td>{{ item.productName }}</td>
-                  <td>
-                    <input
-                      class="qty-input"
-                      type="number"
-                      v-model.number="item.quantity"
-                      min="1"
-                      :max="item.stock"
-                      @change="updateCartQuantity(item)"
-                    />
-                  </td>
-                  <td>{{ Number(item.unitPrice).toLocaleString() }}</td>
-                  <td>{{ (item.unitPrice * item.quantity).toLocaleString() }}</td>
-                  <td>
-                    <button class="delete" @click="removeFromCart(item.productId)">
-                      Xóa
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="checkout-summary">
-              <p>
-                Tổng tiền:
-                <b>{{ cartTotal.toLocaleString() }} VNĐ</b>
-              </p>
-
-              <p>
-                Chiết khấu:
-                <b>{{ Number(checkout.discountAmount || 0).toLocaleString() }} VNĐ</b>
-              </p>
-
-              <p>
-                Thành tiền:
-                <b>{{ finalAmount.toLocaleString() }} VNĐ</b>
-              </p>
-
-              <p>
-                Khách trả:
-                <b>{{ Number(checkout.paidAmount || 0).toLocaleString() }} VNĐ</b>
-              </p>
-
-              <p>
-                Còn nợ:
-                <b>{{ debtAmount.toLocaleString() }} VNĐ</b>
-              </p>
-
-              <button @click="createCheckoutOrder">
-                ✅ Tạo đơn bán hàng
-              </button>
-            </div>
-          </div>
+        <div class="stat-card">
+          <span>Tổng công nợ</span>
+          <b>{{ formatMoney(totalDebt) }}</b>
         </div>
       </section>
 
-      <!-- CUSTOMERS -->
-      <section v-if="activePanel === 'customers'" class="panel">
+      <section class="panel">
+        <h2>Quản lý đơn hàng</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Mã đơn</th>
+              <th>Khách hàng</th>
+              <th>Ngày tạo</th>
+              <th>Tổng tiền</th>
+              <th>Đã trả</th>
+              <th>Còn nợ</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr v-for="order in orders" :key="order.id || order.orderId">
+              <td>{{ order.orderCode || 'ORD' + (order.id || order.orderId) }}</td>
+              <td>{{ order.customer?.name || order.customerName || 'ID: ' + order.customerId }}</td>
+              <td>{{ order.orderDate ? new Date(order.orderDate).toLocaleString('vi-VN') : '' }}</td>
+              <td>{{ formatMoney(order.finalAmount || order.totalAmount) }}</td>
+              <td>{{ formatMoney(order.paidAmount) }}</td>
+              <td>{{ formatMoney(order.debtAmount) }}</td>
+              <td>
+                <span :class="statusClass(order.orderStatus || order.paymentStatus || order.status)">
+                  {{ statusLabel(order.orderStatus || order.paymentStatus || order.status) }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <!-- CUSTOMERS -->
+    <main v-if="activePage === 'customers'" class="page">
+      <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>👥 Quản lý khách hàng</h2>
-            <p>Quản lý thông tin, lịch sử mua và công nợ khách hàng.</p>
+            <h2>Khách hàng</h2>
+            <p>Hồ sơ khách hàng phục vụ tạo đơn, lịch sử mua hàng và công nợ.</p>
           </div>
 
-          <button @click="addCustomer">
+          <button class="primary-btn" @click="openCustomerModal()">
             + Thêm khách hàng
           </button>
         </div>
@@ -1008,94 +1276,34 @@ onMounted(loadAll)
           </thead>
 
           <tbody>
-            <tr v-for="c in customers" :key="c.id">
-              <td>{{ c.id }}</td>
-              <td>{{ c.name }}</td>
-              <td>{{ c.phone }}</td>
-              <td>{{ c.email }}</td>
-              <td>{{ c.address }}</td>
-              <td>{{ Number(c.debt || c.currentDebt || 0).toLocaleString() }} VNĐ</td>
+            <tr v-for="customer in customers" :key="customerId(customer)">
+              <td>{{ customerId(customer) }}</td>
+              <td>{{ customerName(customer) }}</td>
+              <td>{{ customer.phone }}</td>
+              <td>{{ customer.email }}</td>
+              <td>{{ customer.address }}</td>
+              <td>{{ formatMoney(customer.debt || customer.currentDebt) }}</td>
               <td>
-                <button class="edit" @click="editCustomer(c)">
+                <button class="small-btn" @click="openCustomerModal(customer)">
                   Sửa
-                </button>
-
-                <button class="delete" @click="deleteCustomer(c.id)">
-                  Xóa
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
       </section>
+    </main>
 
-      <!-- ORDERS -->
-      <section v-if="activePanel === 'orders'" class="panel">
+    <!-- SUPPLIERS -->
+    <main v-if="activePage === 'suppliers'" class="page">
+      <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>🛒 Quản lý đơn hàng</h2>
-            <p>Danh sách đơn bán hàng do Nhóm 2 xử lý.</p>
+            <h2>Nhà cung cấp</h2>
+            <p>Nhóm 2 chỉ quản lý thông tin liên hệ nhà cung cấp, không nhập kho.</p>
           </div>
 
-          <button @click="addOrder">
-            + Tạo đơn bán hàng
-          </button>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Khách hàng</th>
-              <th>Ngày đặt</th>
-              <th>Tổng tiền</th>
-              <th>Giảm giá</th>
-              <th>Thành tiền</th>
-              <th>Đã trả</th>
-              <th>Còn nợ</th>
-              <th>Trạng thái</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr v-for="o in orders" :key="o.id">
-              <td>{{ o.id }}</td>
-              <td>{{ o.customer?.name || 'ID: ' + o.customerId }}</td>
-              <td>{{ o.orderDate ? new Date(o.orderDate).toLocaleDateString('vi-VN') : '' }}</td>
-              <td>{{ Number(o.totalAmount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ Number(o.discountAmount || o.discount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ Number(o.finalAmount || o.totalAmount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ Number(o.paidAmount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ Number(o.debtAmount || 0).toLocaleString() }} VNĐ</td>
-              <td>
-                <span :class="statusClass(orderStatusValue(o))">
-                  {{ statusLabel(orderStatusValue(o)) }}
-                </span>
-              </td>
-              <td>
-                <button class="edit" @click="editOrder(o)">
-                  Sửa
-                </button>
-
-                <button class="delete" @click="deleteOrder(o.id)">
-                  Xóa
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- SUPPLIERS -->
-      <section v-if="activePanel === 'suppliers'" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>🏬 Quản lý nhà cung cấp</h2>
-            <p>Nhóm 2 chỉ quản lý thông tin liên hệ nhà cung cấp, không xử lý nhập kho.</p>
-          </div>
-
-          <button @click="addSupplier">
+          <button class="primary-btn" @click="openSupplierModal()">
             + Thêm nhà cung cấp
           </button>
         </div>
@@ -1104,50 +1312,44 @@ onMounted(loadAll)
           <thead>
             <tr>
               <th>ID</th>
-              <th>Tên</th>
+              <th>Tên nhà cung cấp</th>
+              <th>Người liên hệ</th>
               <th>SĐT</th>
               <th>Email</th>
               <th>Địa chỉ</th>
-              <th>Người liên hệ</th>
+              <th>Trạng thái</th>
               <th>Thao tác</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="s in suppliers" :key="s.id">
-              <td>{{ s.id }}</td>
-              <td>{{ s.name }}</td>
-              <td>{{ s.phone }}</td>
-              <td>{{ s.email }}</td>
-              <td>{{ s.address }}</td>
-              <td>{{ s.contactPerson }}</td>
+            <tr v-for="supplier in suppliers" :key="supplierId(supplier)">
+              <td>{{ supplierId(supplier) }}</td>
+              <td>{{ supplierName(supplier) }}</td>
+              <td>{{ supplier.contactPerson }}</td>
+              <td>{{ supplier.phone }}</td>
+              <td>{{ supplier.email }}</td>
+              <td>{{ supplier.address }}</td>
+              <td>{{ supplier.status || 'Active' }}</td>
               <td>
-                <button class="edit" @click="editSupplier(s)">
+                <button class="small-btn" @click="openSupplierModal(supplier)">
                   Sửa
-                </button>
-
-                <button class="delete" @click="deleteSupplier(s.id)">
-                  Xóa
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
       </section>
+    </main>
 
-      <!-- PAYMENTS -->
-      <section v-if="activePanel === 'payments'" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>💳 Thanh toán</h2>
-            <p>Ghi nhận và theo dõi các giao dịch thanh toán của đơn hàng.</p>
-          </div>
-        </div>
+    <!-- PAYMENTS -->
+    <main v-if="activePage === 'payments'" class="page">
+      <section class="panel">
+        <h2>Thanh toán</h2>
 
         <table>
           <thead>
             <tr>
-              <th>ID</th>
               <th>Mã thanh toán</th>
               <th>Mã đơn</th>
               <th>Phương thức</th>
@@ -1158,43 +1360,27 @@ onMounted(loadAll)
           </thead>
 
           <tbody>
-            <tr v-for="p in payments" :key="p.id">
-              <td>{{ p.id }}</td>
-              <td>{{ p.paymentCode || 'PAY' + p.id }}</td>
-              <td>{{ p.orderId || '-' }}</td>
-              <td>{{ p.paymentMethod }}</td>
-              <td>{{ Number(p.amount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ p.paymentDate ? new Date(p.paymentDate).toLocaleDateString('vi-VN') : '' }}</td>
+            <tr v-for="payment in payments" :key="payment.id || payment.paymentId">
+              <td>{{ payment.paymentCode || 'PAY' + (payment.id || payment.paymentId) }}</td>
+              <td>{{ payment.orderId }}</td>
+              <td>{{ payment.paymentMethod }}</td>
+              <td>{{ formatMoney(payment.amount) }}</td>
+              <td>{{ payment.paymentDate ? new Date(payment.paymentDate).toLocaleString('vi-VN') : '' }}</td>
               <td>
-                <span :class="statusClass(p.paymentStatus)">
-                  {{ p.paymentStatus || 'Paid' }}
+                <span :class="statusClass(payment.paymentStatus)">
+                  {{ payment.paymentStatus || 'Paid' }}
                 </span>
               </td>
             </tr>
           </tbody>
         </table>
       </section>
+    </main>
 
-      <!-- DEBTS -->
-      <section v-if="activePanel === 'debts'" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>💰 Công nợ khách hàng</h2>
-            <p>Theo dõi số tiền khách hàng còn nợ và ghi nhận trả nợ.</p>
-          </div>
-        </div>
-
-        <div class="stats report-stats">
-          <div class="stat warning">
-            <span>Tổng công nợ</span>
-            <b>{{ totalDebt.toLocaleString() }} VNĐ</b>
-          </div>
-
-          <div class="stat success">
-            <span>Số khoản nợ</span>
-            <b>{{ debts.length }}</b>
-          </div>
-        </div>
+    <!-- DEBTS -->
+    <main v-if="activePage === 'debts'" class="page">
+      <section class="panel">
+        <h2>Công nợ khách hàng</h2>
 
         <table>
           <thead>
@@ -1211,20 +1397,20 @@ onMounted(loadAll)
           </thead>
 
           <tbody>
-            <tr v-for="d in debts" :key="d.id">
-              <td>{{ d.id }}</td>
-              <td>{{ d.customer?.name || 'ID: ' + d.customerId }}</td>
-              <td>{{ d.orderId || '-' }}</td>
-              <td>{{ Number(d.debtAmount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ Number(d.paidAmount || 0).toLocaleString() }} VNĐ</td>
-              <td>{{ Number(d.remainingAmount || d.debtAmount || 0).toLocaleString() }} VNĐ</td>
+            <tr v-for="debt in debts" :key="debt.id || debt.debtId">
+              <td>{{ debt.id || debt.debtId }}</td>
+              <td>{{ debt.customerName || debt.customer?.name || 'ID: ' + debt.customerId }}</td>
+              <td>{{ debt.orderId }}</td>
+              <td>{{ formatMoney(debt.debtAmount) }}</td>
+              <td>{{ formatMoney(debt.paidAmount) }}</td>
+              <td>{{ formatMoney(debt.remainingAmount || debt.debtAmount) }}</td>
               <td>
-                <span :class="statusClass(d.debtStatus)">
-                  {{ d.debtStatus || 'Unpaid' }}
+                <span :class="statusClass(debt.debtStatus)">
+                  {{ debt.debtStatus || 'Unpaid' }}
                 </span>
               </td>
               <td>
-                <button class="edit" @click="payDebt(d)">
+                <button class="small-btn" @click="openDebtModal(debt)">
                   Trả nợ
                 </button>
               </td>
@@ -1232,35 +1418,32 @@ onMounted(loadAll)
           </tbody>
         </table>
       </section>
+    </main>
 
-      <!-- INTEGRATION -->
-      <section v-if="activePanel === 'integration'" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>🔄 Đồng bộ dữ liệu microservices</h2>
-            <p>Thể hiện luồng Nhóm 2 nhận stock.updated và gửi order.created.</p>
-          </div>
+    <!-- INTEGRATION -->
+    <main v-if="activePage === 'integration'" class="page">
+      <section class="stats">
+        <div class="stat-card">
+          <span>ProductStockCaches / stock.updated</span>
+          <b>{{ products.length }}</b>
         </div>
 
-        <div class="arch-grid">
-          <div class="arch-card primary-card">
-            <h3>Consume stock.updated</h3>
-            <p>Nhận dữ liệu tồn kho từ Product & Inventory Service.</p>
-            <b>{{ products.length }} sản phẩm/tồn kho</b>
-          </div>
-
-          <div class="arch-card success-card">
-            <h3>Publish order.created</h3>
-            <p>Gửi dữ liệu đơn hàng sang User & Report Service.</p>
-            <b>{{ orders.length }} đơn hàng</b>
-          </div>
-
-          <div class="arch-card info-card">
-            <h3>Outbox Messages</h3>
-            <p>Lưu event trước khi gửi để tránh mất dữ liệu.</p>
-            <b>{{ outboxMessages.length }} event</b>
-          </div>
+        <div class="stat-card">
+          <span>Orders / order.created</span>
+          <b>{{ orders.length }}</b>
         </div>
+
+        <div class="stat-card">
+          <span>Outbox Messages</span>
+          <b>{{ outboxMessages.length }}</b>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Đồng bộ dữ liệu microservices</h2>
+        <p>
+          Trang này mô phỏng Nhóm 2 nhận stock.updated từ Nhóm 1 và phát order.created sang Nhóm 3.
+        </p>
 
         <table>
           <thead>
@@ -1273,768 +1456,1492 @@ onMounted(loadAll)
           </thead>
 
           <tbody>
-            <tr v-for="m in outboxMessages" :key="m.id">
-              <td>{{ m.id }}</td>
-              <td>{{ m.eventName }}</td>
-              <td>{{ m.status }}</td>
-              <td>{{ m.createdAt ? new Date(m.createdAt).toLocaleString('vi-VN') : '' }}</td>
+            <tr v-for="message in outboxMessages" :key="message.id || message.outboxMessageId">
+              <td>{{ message.id || message.outboxMessageId }}</td>
+              <td>{{ message.eventName }}</td>
+              <td>{{ message.status }}</td>
+              <td>{{ message.createdAt ? new Date(message.createdAt).toLocaleString('vi-VN') : '' }}</td>
             </tr>
           </tbody>
         </table>
       </section>
+    </main>
 
-      <!-- REPORTS -->
-      <section v-if="activePanel === 'reports'" class="panel">
-        <h2>📈 Báo cáo tổng hợp — Nhóm 3</h2>
-        <p>Phần này thuộc User & Report Service. Dữ liệu được tổng hợp từ event order.created do Nhóm 2 gửi sang.</p>
-
-        <div class="stats report-stats">
-          <div class="stat warning">
-            <span>Tổng doanh thu</span>
-            <b>{{ totalRevenue().toLocaleString() }} VNĐ</b>
+    <!-- CART DRAWER -->
+    <div v-if="cartOpen" class="drawer-backdrop" @click.self="cartOpen = false">
+      <aside class="cart-drawer">
+        <div class="cart-header">
+          <div>
+            <p>RetailERP</p>
+            <h2>Giỏ hàng của bạn</h2>
           </div>
-
-          <div class="stat success">
-            <span>Tổng đơn hàng</span>
-            <b>{{ orders.length }}</b>
-          </div>
-
-          <div class="stat primary">
-            <span>Đơn đã thanh toán</span>
-            <b>{{ paidOrders }}</b>
-          </div>
-
-          <div class="stat info">
-            <span>Đơn còn công nợ</span>
-            <b>{{ debtOrders }}</b>
-          </div>
+          <button class="close-btn" @click="cartOpen = false">✕</button>
         </div>
-      </section>
 
-      <!-- SETTINGS -->
-      <section v-if="activePanel === 'settings'" class="panel">
-        <h2>⚙️ Cài đặt hệ thống</h2>
-
-        <div class="arch-grid">
-          <div class="arch-card primary-card">
-            <h3>JWT Authentication</h3>
-            <p>Đăng nhập và phân quyền Admin, Sales, Warehouse.</p>
-          </div>
-
-          <div class="arch-card info-card">
-            <h3>Ocelot API Gateway</h3>
-            <p>Điểm vào duy nhất, định tuyến request tới đúng service.</p>
-          </div>
-
-          <div class="arch-card success-card">
-            <h3>SQL Server</h3>
-            <p>Mỗi service có database riêng: ProductDB, OrderDB, UserDB.</p>
-          </div>
+        <div v-if="cart.length === 0" class="cart-empty-state">
+          <div class="empty-icon">🛒</div>
+          <h3>Giỏ hàng đang trống</h3>
+          <p>Hãy chọn sản phẩm từ trang bán hàng để tạo đơn.</p>
+          <button @click="cartOpen = false">Tiếp tục mua hàng</button>
         </div>
-      </section>
-            <!-- CUSTOMER MODAL -->
-      <div v-if="showCustomerModal" class="modal-backdrop">
-        <div class="modal-card">
-          <div class="modal-head">
-            <h2>
-              {{ editingCustomer ? 'Sửa khách hàng' : 'Thêm khách hàng' }}
-            </h2>
 
-            <button class="modal-close" @click="closeCustomerModal">
-              ✕
-            </button>
+        <template v-else>
+          <div class="cart-summary-top">
+            <span>{{ cart.length }} loại sản phẩm</span>
+            <b>{{ cartTotalQuantity }} sản phẩm</b>
           </div>
 
-          <div class="customer-form-grid">
-            <div class="form-field">
-              <label>Tên khách hàng</label>
-              <input
-                v-model="customerForm.name"
-                type="text"
-                placeholder="Nhập tên khách hàng"
-              />
-            </div>
+          <div class="cart-list">
+            <div v-for="item in cart" :key="item.productId" class="cart-item">
+              <div class="cart-icon">{{ item.image }}</div>
 
-            <div class="form-field">
-              <label>Số điện thoại</label>
-              <input
-                v-model="customerForm.phone"
-                type="text"
-                placeholder="Nhập số điện thoại"
-              />
-            </div>
+              <div class="cart-info">
+                <div class="cart-row-head">
+                  <h4>{{ item.productName }}</h4>
+                  <button class="remove-link" @click="removeFromCart(item.productId)">
+                    Xóa
+                  </button>
+                </div>
 
-            <div class="form-field">
-              <label>Email</label>
-              <input
-                v-model="customerForm.email"
-                type="email"
-                placeholder="Nhập email"
-              />
-            </div>
+                <p class="cart-code">{{ item.productCode }} · Còn {{ item.stock }} sản phẩm</p>
 
-            <div class="form-field">
-              <label>Công nợ</label>
-              <input
-                v-model.number="customerForm.debt"
-                type="number"
-                min="0"
-                placeholder="Nhập công nợ"
-              />
-            </div>
+                <div class="cart-row-bottom">
+                  <b>{{ formatMoney(item.unitPrice) }}</b>
 
-            <div class="form-field full">
-              <label>Địa chỉ</label>
-              <textarea
-                v-model="customerForm.address"
-                rows="3"
-                placeholder="Nhập địa chỉ"
-              ></textarea>
+                  <div class="quantity-control">
+                    <button @click="updateQuantity(item, item.quantity - 1)">−</button>
+                    <input
+                      :value="item.quantity"
+                      type="number"
+                      min="1"
+                      :max="item.stock"
+                      @input="updateQuantity(item, $event.target.value)"
+                    />
+                    <button @click="updateQuantity(item, item.quantity + 1)">+</button>
+                  </div>
+                </div>
+
+                <div class="item-total">
+                  Thành tiền: <b>{{ formatMoney(item.unitPrice * item.quantity) }}</b>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="modal-actions">
-            <button class="cancel-btn" @click="closeCustomerModal">
-              Hủy
+          <div class="checkout-box customer-checkout">
+            <h3>Thông tin đặt hàng</h3>
+
+            <div class="checkout-field">
+              <label>Phương thức thanh toán</label>
+              <select v-model="checkout.paymentMethod">
+                <option value="Cash">Tiền mặt khi nhận hàng</option>
+                <option value="BankTransfer">Chuyển khoản</option>
+                <option value="EWallet">Ví điện tử</option>
+                <option value="QR">Thanh toán QR</option>
+              </select>
+            </div>
+
+            <div class="checkout-total-box">
+              <div class="money-line">
+                <span>Tổng tiền hàng</span>
+                <b>{{ formatMoney(cartTotal) }}</b>
+              </div>
+
+              <div class="money-line">
+                <span>Ưu đãi hệ thống</span>
+                <b>- {{ formatMoney(0) }}</b>
+              </div>
+
+              <div class="money-line final">
+                <span>Tổng cần thanh toán</span>
+                <b>{{ formatMoney(cartTotal) }}</b>
+              </div>
+            </div>
+
+            <div v-if="currentUser" class="customer-order-info">
+              <b>Thông tin nhận hàng</b>
+              <span>{{ currentUser.fullName }} · {{ currentUser.phone }}</span>
+              <small>{{ currentUser.address || 'Chưa có địa chỉ' }}</small>
+            </div>
+
+            <button class="checkout-btn" @click="createOrder">
+              Đặt hàng
             </button>
 
-            <button @click="saveCustomer">
-              {{ editingCustomer ? 'Lưu thay đổi' : 'Thêm khách hàng' }}
+            <button class="continue-btn" @click="cartOpen = false">
+              Tiếp tục chọn sản phẩm
             </button>
           </div>
+        </template>
+      </aside>
+    </div>
+
+    <!-- AUTH MODAL -->
+    <div v-if="showAuthModal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="drawer-head">
+          <h2>{{ authMode === 'login' ? 'Đăng nhập khách hàng' : 'Đăng ký tài khoản khách hàng' }}</h2>
+          <button class="close-btn" @click="closeAuth">✕</button>
+        </div>
+
+        <div v-if="authMode === 'login'" class="form-grid one">
+          <label>Số điện thoại</label>
+          <input v-model="loginForm.phone" type="text" placeholder="Nhập số điện thoại" />
+
+          <label>Mật khẩu</label>
+          <input v-model="loginForm.password" type="password" placeholder="Nhập mật khẩu demo" />
+
+          <p v-if="authError" class="error-text">{{ authError }}</p>
+
+          <button class="checkout-btn" @click="loginCustomer">
+            Đăng nhập
+          </button>
+
+          <p class="switch-auth">
+            Chưa có tài khoản?
+            <button @click="authMode = 'register'; authError = ''">Đăng ký ngay</button>
+          </p>
+        </div>
+
+        <div v-else class="form-grid one">
+          <label>Họ tên</label>
+          <input v-model="registerForm.fullName" type="text" placeholder="Nhập họ tên" />
+
+          <label>Số điện thoại</label>
+          <input v-model="registerForm.phone" type="text" placeholder="Nhập số điện thoại" />
+
+          <label>Email</label>
+          <input v-model="registerForm.email" type="email" placeholder="Nhập email" />
+
+          <label>Địa chỉ</label>
+          <input v-model="registerForm.address" type="text" placeholder="Nhập địa chỉ" />
+
+          <label>Mật khẩu</label>
+          <input v-model="registerForm.password" type="password" placeholder="Nhập mật khẩu" />
+
+          <p v-if="authError" class="error-text">{{ authError }}</p>
+
+          <button class="checkout-btn" @click="registerCustomer">
+            Đăng ký
+          </button>
+
+          <p class="switch-auth">
+            Đã có tài khoản?
+            <button @click="authMode = 'login'; authError = ''">Đăng nhập</button>
+          </p>
         </div>
       </div>
-    </main>
+    </div>
+
+    <!-- CUSTOMER MODAL -->
+    <div v-if="showCustomerModal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="drawer-head">
+          <h2>{{ editingCustomer ? 'Sửa khách hàng' : 'Thêm khách hàng' }}</h2>
+          <button class="close-btn" @click="closeCustomerModal">✕</button>
+        </div>
+
+        <div class="form-grid">
+          <label>Tên khách hàng</label>
+          <input v-model="customerForm.name" type="text" placeholder="Nhập tên khách hàng" />
+
+          <label>Số điện thoại</label>
+          <input v-model="customerForm.phone" type="text" placeholder="Nhập số điện thoại" />
+
+          <label>Email</label>
+          <input v-model="customerForm.email" type="email" placeholder="Nhập email" />
+
+          <label>Công nợ</label>
+          <input v-model.number="customerForm.debt" type="number" min="0" placeholder="Công nợ ban đầu" />
+
+          <label class="full">Địa chỉ</label>
+          <textarea v-model="customerForm.address" class="full" rows="3" placeholder="Nhập địa chỉ"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button class="cancel-btn" @click="closeCustomerModal">Hủy</button>
+          <button class="primary-btn" @click="saveCustomer">Lưu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUPPLIER MODAL -->
+    <div v-if="showSupplierModal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="drawer-head">
+          <h2>{{ editingSupplier ? 'Sửa nhà cung cấp' : 'Thêm nhà cung cấp' }}</h2>
+          <button class="close-btn" @click="closeSupplierModal">✕</button>
+        </div>
+
+        <div class="form-grid">
+          <label>Tên nhà cung cấp</label>
+          <input v-model="supplierForm.name" type="text" placeholder="Nhập tên nhà cung cấp" />
+
+          <label>Người liên hệ</label>
+          <input v-model="supplierForm.contactPerson" type="text" placeholder="Nhập người liên hệ" />
+
+          <label>Số điện thoại</label>
+          <input v-model="supplierForm.phone" type="text" placeholder="Nhập số điện thoại" />
+
+          <label>Email</label>
+          <input v-model="supplierForm.email" type="email" placeholder="Nhập email" />
+
+          <label>Trạng thái</label>
+          <select v-model="supplierForm.status">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+
+          <label class="full">Địa chỉ</label>
+          <textarea v-model="supplierForm.address" class="full" rows="3" placeholder="Nhập địa chỉ"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button class="cancel-btn" @click="closeSupplierModal">Hủy</button>
+          <button class="primary-btn" @click="saveSupplier">Lưu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEBT MODAL -->
+    <div v-if="showDebtModal" class="modal-backdrop">
+      <div class="modal-card small-modal">
+        <div class="drawer-head">
+          <h2>Ghi nhận trả nợ</h2>
+          <button class="close-btn" @click="closeDebtModal">✕</button>
+        </div>
+
+        <div class="form-grid one">
+          <label>Số tiền khách trả</label>
+          <input v-model.number="debtPayForm.amount" type="number" min="0" />
+
+          <label>Phương thức thanh toán</label>
+          <select v-model="debtPayForm.paymentMethod">
+            <option value="Cash">Tiền mặt</option>
+            <option value="BankTransfer">Chuyển khoản</option>
+            <option value="EWallet">Ví điện tử</option>
+            <option value="QR">QR</option>
+          </select>
+
+          <button class="checkout-btn" @click="payDebt">
+            Xác nhận trả nợ
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-:global(:root) {
-  --color-primary: #1976d2;
-  --color-primary-bg: #e3f2fd;
-  --color-primary-bg-hover: #bbdefb;
-  --color-primary-border: #90caf9;
-  --color-primary-border-hover: #64b5f6;
-  --color-primary-hover: #1565c0;
-  --color-primary-active: #0d47a1;
-  --color-primary-text: #1976d2;
-  --color-primary-text-hover: #1565c0;
-  --color-primary-text-active: #0d47a1;
-
-  --color-success: #2e7d32;
-  --color-success-bg: #e8f5e9;
-  --color-success-bg-hover: #c8e6c9;
-  --color-success-border: #a5d6a7;
-  --color-success-hover: #1b5e20;
-  --color-success-active: #0d3c0d;
-  --color-success-text: #2e7d32;
-
-  --color-warning: #ed6c02;
-  --color-warning-bg: #fff3e0;
-  --color-warning-border: #ffcc02;
-  --color-warning-hover: #e65100;
-  --color-warning-active: #bf360c;
-  --color-warning-text: #ed6c02;
-
-  --color-error: #d32f2f;
-  --color-error-bg: #ffebee;
-  --color-error-border: #ef9a9a;
-  --color-error-hover: #c62828;
-  --color-error-text: #d32f2f;
-
-  --color-info: #0288d1;
-  --color-info-bg: #e1f5fe;
-  --color-info-border: #81d4fa;
-  --color-info-hover: #0277bd;
-  --color-info-active: #01579b;
-  --color-info-text: #0288d1;
-
-  --color-text-base: #121212;
-  --color-text: rgba(0, 0, 0, 0.87);
-  --color-text-secondary: rgba(0, 0, 0, 0.6);
-  --color-text-tertiary: rgba(0, 0, 0, 0.38);
-  --color-bg-base: #fafafa;
-  --color-bg-container: #ffffff;
-  --color-bg-layout: #f5f5f5;
-  --color-border: #e0e0e0;
-  --color-border-secondary: #eeeeee;
-
-  --radius-md: 4px;
-  --radius-lg: 8px;
-  --padding-lg: 24px;
-  --margin: 16px;
-  --margin-lg: 24px;
-
-  --shadow-main: 0px 2px 1px -1px rgba(0,0,0,0.2), 0px 1px 1px 0px rgba(0,0,0,0.14), 0px 1px 3px 0px rgba(0,0,0,0.12);
-  --shadow-secondary: 0px 3px 3px -2px rgba(0,0,0,0.2), 0px 3px 4px 0px rgba(0,0,0,0.14), 0px 1px 8px 0px rgba(0,0,0,0.12);
-}
-
-* {
+:global(*) {
   box-sizing: border-box;
 }
 
-.layout {
-  min-height: 100vh;
-  display: flex;
-  background: var(--color-bg-layout);
-  color: var(--color-text);
-  font-family: Arial, sans-serif;
-}
-
-.sidebar {
-  width: 280px;
-  background: var(--color-bg-container);
-  padding: 28px;
-  border-right: 1px solid var(--color-border-secondary);
-  box-shadow: var(--shadow-main);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 40px;
-}
-
-.brand-logo {
-  width: 65px;
-  height: 65px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-active));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 30px;
-}
-
-.brand h2 {
+:global(body) {
   margin: 0;
-  color: var(--color-text-base);
+  background: #f4f7fb;
+  color: #172033;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-.brand p {
-  margin: 4px 0 0;
-  color: var(--color-text-secondary);
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
-.sidebar nav {
+button {
+  cursor: pointer;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+/* HEADER */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(180deg, #3454d1, #243c9d);
+  color: white;
+  box-shadow: 0 8px 24px rgba(36, 60, 157, 0.25);
+}
+
+.header-top {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.header-top-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 7px 12px;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.menu-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.menu-title {
-  margin: 8px 0 4px;
-  color: var(--color-text-tertiary);
+  gap: 22px;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
-.sidebar nav button {
-  width: 100%;
-  border: 1px solid transparent;
+.header-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  border: none;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.logo-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: white;
+  color: #3454d1;
+}
+
+.header-action {
+  min-height: 40px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.14);
+  color: white;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.header-action:hover {
+  background: rgba(255, 255, 255, 0.23);
+}
+
+.search-box {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  color: #172033;
+  border-radius: 12px;
+  padding: 0 12px;
+}
+
+.search-box input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 14px;
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.search-clear {
+  border: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #243c9d;
+  font-weight: 900;
+}
+
+.search-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 250;
+  background: white;
+  color: #172033;
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+}
+
+.search-panel::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 34px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  transform: rotate(45deg);
+  border-left: 1px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
+}
+
+.search-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px 10px;
+  color: #26324a;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.search-title b {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.search-section {
+  display: grid;
+  gap: 8px;
+}
+
+.search-item {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 10px;
+  background: #f8fafc;
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  align-items: center;
+  gap: 10px;
   text-align: left;
-  padding: 12px 14px;
-  border-radius: var(--radius-lg);
-  transition: 0.25s;
-  font-weight: 600;
 }
 
-.sidebar nav button:hover {
-  background: var(--color-primary-bg-hover);
-  color: var(--color-primary-text-hover);
-  border-color: var(--color-primary-border-hover);
+.search-item:hover {
+  background: #eef2ff;
 }
 
-.sidebar nav button.active {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text-active);
-  border-color: var(--color-primary-border);
+.search-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: white;
+  font-size: 24px;
 }
 
-.sidebar nav button.logout {
-  color: var(--color-error-text);
-}
-
-.sidebar nav button.logout:hover {
-  background: var(--color-error-bg);
-  color: var(--color-error-hover);
-  border-color: var(--color-error-border);
-}
-
-.main {
-  flex: 1;
+.search-info {
   min-width: 0;
 }
 
-.topbar {
-  min-height: 90px;
-  background: var(--color-bg-container);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 30px;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
-
-.topbar h1 {
-  margin: 0;
-  color: var(--color-text-base);
-}
-
-.subtitle {
-  margin: 6px 0 0;
-  color: var(--color-text-secondary);
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.user-box {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text-active);
-  padding: 12px 18px;
-  border: 1px solid var(--color-primary-border);
-  border-radius: var(--radius-lg);
-  font-weight: 700;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--margin-lg);
-  padding: var(--padding-lg);
-}
-
-.stat {
-  border-radius: var(--radius-lg);
-  padding: 28px;
-  box-shadow: var(--shadow-main);
-  border: 1px solid var(--color-border-secondary);
-  background: var(--color-bg-container);
-}
-
-.stat span {
-  color: var(--color-text-secondary);
-  font-weight: 700;
-}
-
-.stat b {
+.search-info b {
   display: block;
-  margin-top: 18px;
-  font-size: 28px;
-  color: var(--color-text-base);
+  color: #172033;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.stat.primary {
-  background: var(--color-primary-bg);
-  border-color: var(--color-primary-border);
-}
-
-.stat.primary b {
-  color: var(--color-primary-text-active);
-}
-
-.stat.success {
-  background: var(--color-success-bg);
-  border-color: var(--color-success-border);
-}
-
-.stat.success b {
-  color: var(--color-success-active);
-}
-
-.stat.info {
-  background: var(--color-info-bg);
-  border-color: var(--color-info-border);
-}
-
-.stat.info b {
-  color: var(--color-info-active);
-}
-
-.stat.warning {
-  background: var(--color-warning-bg);
-  border-color: var(--color-warning-border);
-}
-
-.stat.warning b {
-  color: var(--color-warning-active);
-}
-
-.report-stats {
-  padding: 0;
-  margin-top: var(--margin-lg);
-  grid-template-columns: repeat(2, 1fr);
-}
-
-.chart-section {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  align-items: center;
-  gap: 36px;
-  margin-top: var(--margin-lg);
-}
-
-.pie-chart {
-  width: 280px;
-  height: 280px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-secondary);
-}
-
-.pie-center {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  background: var(--color-bg-container);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-main);
-}
-
-.pie-center strong {
-  color: var(--color-text-base);
-  font-size: 34px;
-}
-
-.pie-center span {
-  color: var(--color-text-secondary);
-  margin-top: 4px;
-}
-
-.chart-legend {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-.legend-item {
-  display: grid;
-  grid-template-columns: 18px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--color-border-secondary);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-base);
-}
-
-.legend-item p {
-  margin: 0;
-  color: var(--color-text-secondary);
+.search-info small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
   font-weight: 700;
 }
 
-.legend-item b {
-  color: var(--color-text-base);
-  font-size: 20px;
+.search-item strong {
+  color: #3454d1;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
-.legend-color {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+.search-empty {
+  text-align: center;
+  padding: 24px 12px 16px;
 }
 
-.legend-color.product {
-  background: var(--color-primary);
+.empty-mini-icon {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 10px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: #eef2ff;
+  font-size: 26px;
 }
 
-.legend-color.customer {
-  background: var(--color-success);
+.search-empty b {
+  display: block;
+  color: #172033;
 }
 
-.legend-color.order {
-  background: var(--color-warning);
+.search-empty p {
+  margin: 8px auto 0;
+  color: #64748b;
+  max-width: 420px;
 }
 
-.legend-color.supplier {
-  background: var(--color-info);
+.search-categories {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
 }
 
-.dashboard-box,
-.panel {
-  margin: 0 var(--margin-lg) var(--margin-lg);
-  background: var(--color-bg-container);
-  border: 1px solid var(--color-border-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--padding-lg);
-  box-shadow: var(--shadow-main);
+.search-categories button {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #eef2ff;
+  color: #243c9d;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
-.dashboard-box h2,
-.panel h2 {
-  margin-top: 0;
-  color: var(--color-text-base);
+.cart-button {
+  position: relative;
 }
 
-.dashboard-box p,
-.panel p {
-  color: var(--color-text-secondary);
+.cart-button b {
+  margin-left: 6px;
+  background: white;
+  color: #3454d1;
+  padding: 2px 7px;
+  border-radius: 999px;
 }
 
-.arch-grid {
+.user-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.quick-nav {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 12px 14px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.quick-nav button {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
+  padding: 11px 10px;
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 850;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.quick-nav button b {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: white;
+  color: #3454d1;
+  font-size: 12px;
+}
+
+.quick-nav button:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.quick-nav button.active {
+  background: white;
+  color: #243c9d;
+  border-color: white;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+/* PAGE */
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 12px 60px;
+}
+
+.home-layout {
+  display: grid;
+  grid-template-columns: 230px 1fr 250px;
+  gap: 14px;
+}
+
+.category-list,
+.hero-banner,
+.member-card,
+.panel,
+.product-card,
+.stat-card,
+.promo-strip {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.08);
+}
+
+.category-list {
+  padding: 8px;
+}
+
+.category-list button {
+  width: 100%;
+  min-height: 40px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #26324a;
+  text-align: left;
+}
+
+.category-list button:hover,
+.category-list button.active {
+  background: #eef2ff;
+  color: #243c9d;
+}
+
+.category-list em {
+  font-style: normal;
+  color: #9aa3b2;
+}
+
+.hero-banner {
+  min-height: 310px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 82% 25%, rgba(99, 102, 241, .20), transparent 30%),
+    linear-gradient(135deg, #f8fbff, #eef2ff);
+}
+
+.hero-tabs {
+  height: 45px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
-  margin-top: var(--margin-lg);
+  background: #f4f7ff;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
 }
 
-.arch-card {
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  border: 1px solid var(--color-border-secondary);
-  background: var(--color-bg-base);
+.hero-tabs span {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid #e5e7eb;
 }
 
-.arch-card h3 {
+.hero-content {
+  padding: 34px;
+}
+
+.hero-content .tag {
+  color: #3454d1;
+  font-weight: 900;
+  margin: 0 0 8px;
+}
+
+.hero-content h1 {
+  max-width: 600px;
+  margin: 0;
+  font-size: 38px;
+  line-height: 1.12;
+  color: #172033;
+}
+
+.hero-content p {
+  max-width: 660px;
+  color: #5b6475;
+  line-height: 1.6;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.hero-actions button,
+.member-card button,
+.primary-btn,
+.checkout-btn,
+.small-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: #3454d1;
+  color: white;
+  font-weight: 900;
+}
+
+.ghost-btn {
+  background: #eef2ff !important;
+  color: #243c9d !important;
+}
+
+.member-card {
+  padding: 16px;
+}
+
+.member-card h3 {
+  margin: 0 0 10px;
+}
+
+.member-card p {
+  color: #5b6475;
+}
+
+.member-card button {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.mini-service {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mini-service span {
+  display: block;
+  padding: 9px;
+  border-radius: 10px;
+  background: #f4f7fb;
+  color: #26324a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-shortcuts {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.admin-shortcuts p {
+  grid-column: 1 / -1;
+  margin: 0 0 2px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.admin-shortcuts button {
+  width: 100%;
+  margin: 0;
+  padding: 9px 8px;
+  border: none;
+  border-radius: 10px;
+  background: #f4f7fb;
+  color: #243c9d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-shortcuts button:hover {
+  background: #eef2ff;
+}
+
+.promo-strip {
+  margin: 14px 0;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  background: linear-gradient(90deg, #26324a, #3454d1);
+  color: white;
+}
+
+.promo-strip div {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.11);
+}
+
+.promo-strip b {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.promo-strip span {
+  font-size: 13px;
+  opacity: .9;
+}
+
+.section-head {
+  margin: 22px 0 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-head h2 {
+  margin-bottom: 4px;
+}
+
+.section-head p {
   margin-top: 0;
-  color: var(--color-text-base);
+  color: #6b7280;
 }
 
-.primary-card {
-  background: var(--color-primary-bg);
-  border-color: var(--color-primary-border);
+.outline-btn {
+  border: 1px solid #3454d1;
+  color: #3454d1;
+  background: white;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 800;
 }
 
-.success-card {
-  background: var(--color-success-bg);
-  border-color: var(--color-success-border);
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
 }
 
-.info-card {
-  background: var(--color-info-bg);
-  border-color: var(--color-info-border);
+.product-card {
+  padding: 16px;
+  transition: .2s;
+}
+
+.product-card:hover {
+  transform: translateY(-2px);
+}
+
+.product-image {
+  height: 124px;
+  border-radius: 14px;
+  background: #f7f9ff;
+  display: grid;
+  place-items: center;
+  font-size: 54px;
+}
+
+.product-meta {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.product-card h3 {
+  min-height: 46px;
+  color: #172033;
+}
+
+.price {
+  color: #3454d1;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.stock {
+  font-weight: 800;
+}
+
+.in-stock {
+  color: #15803d;
+}
+
+.out-stock {
+  color: #dc2626;
+}
+
+.product-card button {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: #3454d1;
+  color: white;
+  font-weight: 900;
+}
+
+.product-card button:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+/* TABLE PAGES */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.stat-card {
+  padding: 18px;
+}
+
+.stat-card span {
+  color: #697386;
+  font-weight: 800;
+}
+
+.stat-card b {
+  display: block;
+  margin-top: 8px;
+  font-size: 25px;
+  color: #3454d1;
+}
+
+.panel {
+  padding: 20px;
+  overflow: hidden;
 }
 
 .panel-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: var(--margin);
+  align-items: center;
+  gap: 12px;
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.panel p {
+  color: #6b7280;
 }
 
 table {
   width: 100%;
-  margin-top: 20px;
   border-collapse: collapse;
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-}
-
-thead {
-  background: var(--color-primary-bg);
-}
-
-th {
-  color: var(--color-primary-text-active);
-  font-weight: 700;
+  margin-top: 14px;
 }
 
 th,
 td {
-  padding: 16px;
-  border-bottom: 1px solid var(--color-border-secondary);
+  padding: 13px;
+  border-bottom: 1px solid #e5e7eb;
   text-align: left;
 }
 
-tbody tr:hover {
-  background: var(--color-primary-bg);
+th {
+  background: #eef2ff;
+  color: #243c9d;
 }
 
-button {
+.status-success,
+.status-warning,
+.status-error,
+.status-info {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.status-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* DRAWER & MODAL */
+.drawer-backdrop,
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.cart-drawer {
+  margin-left: auto;
+  width: min(520px, 100%);
+  height: 100%;
+  background: #f6f8ff;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cart-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 20px 22px;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cart-header p {
+  margin: 0 0 4px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cart-header h2 {
+  margin: 0;
+  color: #172033;
+}
+
+.drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-btn,
+.remove-btn,
+.cancel-btn {
   border: none;
-  color: #ffffff;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  background: var(--color-primary);
-  transition: 0.25s;
-  font-weight: 600;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #243c9d;
+  padding: 9px 12px;
+  font-weight: 900;
 }
 
-button:hover {
-  background: var(--color-primary-hover);
+.cart-empty-state {
+  margin: 22px;
+  padding: 38px 22px;
+  border-radius: 18px;
+  background: white;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.08);
 }
 
-button:active {
-  background: var(--color-primary-active);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-button:disabled:hover {
-  background: var(--color-primary);
-}
-
-.refresh {
-  background: var(--color-info);
-}
-
-.refresh:hover {
-  background: var(--color-info-hover);
-}
-
-.edit {
-  background: var(--color-warning);
-  margin-right: 8px;
-}
-
-.edit:hover {
-  background: var(--color-warning-hover);
-}
-
-.delete {
-  background: var(--color-error);
-}
-
-.delete:hover {
-  background: var(--color-error-hover);
-}
-
-.status-pending {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.status-confirmed {
-  background: var(--color-success-bg);
-  color: var(--color-success-text);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.status-cancelled {
-  background: var(--color-error-bg);
-  color: var(--color-error-text);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.sales-grid {
+.empty-icon {
+  width: 74px;
+  height: 74px;
+  margin: 0 auto 14px;
+  border-radius: 24px;
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  gap: 24px;
-  margin-top: 20px;
+  place-items: center;
+  background: #eef2ff;
+  font-size: 36px;
 }
 
-.form-box {
+.cart-empty-state h3 {
+  margin: 0 0 8px;
+  color: #172033;
+}
+
+.cart-empty-state p {
+  margin: 0 0 18px;
+  color: #64748b;
+}
+
+.cart-empty-state button {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 18px;
+  background: #3454d1;
+  color: white;
+  font-weight: 900;
+}
+
+.cart-summary-top {
+  margin: 18px 22px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: white;
+  display: flex;
+  justify-content: space-between;
+  color: #475569;
+  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.06);
+}
+
+.cart-list {
   display: grid;
+  gap: 12px;
+  margin: 14px 22px;
+}
+
+.cart-item {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.06);
+}
+
+.cart-icon {
+  height: 72px;
+  border-radius: 16px;
+  background: #f3f4f6;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+}
+
+.cart-row-head,
+.cart-row-bottom {
+  display: flex;
+  justify-content: space-between;
   gap: 10px;
-  margin-bottom: 18px;
-  padding: 16px;
-  border: 1px solid var(--color-border-secondary);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-base);
+  align-items: flex-start;
 }
 
-.form-box label {
+.cart-info h4 {
+  margin: 0;
+  color: #172033;
+  line-height: 1.35;
+}
+
+.cart-code {
+  margin: 6px 0 10px;
+  color: #64748b;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--color-text-secondary);
 }
 
-.form-box input,
-.form-box select,
-.qty-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+.cart-row-bottom b {
+  color: #3454d1;
+  font-size: 16px;
+}
+
+.remove-link {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #eef2ff;
+  color: #243c9d;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.quantity-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+
+.quantity-control button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: white;
+  color: #243c9d;
+  font-weight: 900;
+}
+
+.quantity-control input {
+  width: 46px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-weight: 900;
   outline: none;
 }
 
-.form-box input:focus,
-.form-box select:focus,
-.qty-input:focus {
-  border-color: var(--color-primary);
+.item-total {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #d1d5db;
+  color: #64748b;
+  font-size: 13px;
 }
 
-.qty-input {
-  max-width: 80px;
+.item-total b {
+  color: #172033;
 }
 
-.checkout-summary {
-  margin-top: 18px;
+.checkout-box {
+  margin: 0 22px 22px;
+  display: grid;
+  gap: 12px;
   padding: 18px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-bg);
-  border: 1px solid var(--color-primary-border);
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.08);
 }
 
-.checkout-summary p {
+.checkout-box h3 {
+  margin: 0;
+  color: #172033;
+}
+
+.checkout-note {
+  margin: 0;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.customer-order-info {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #172033;
+}
+
+.customer-order-info span {
+  color: #3454d1;
+  font-weight: 900;
+}
+
+.customer-order-info small {
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.checkout-field {
+  display: grid;
+  gap: 6px;
+}
+
+.checkout-field label {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.checkout-box input,
+.checkout-box select,
+.form-grid input,
+.form-grid select,
+.form-grid textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: white;
+  outline: none;
+}
+
+.checkout-box input:focus,
+.checkout-box select:focus,
+.form-grid input:focus,
+.form-grid select:focus,
+.form-grid textarea:focus {
+  border-color: #3454d1;
+  box-shadow: 0 0 0 3px rgba(52, 84, 209, 0.12);
+}
+
+.form-grid textarea {
+  padding: 10px 12px;
+}
+
+.checkout-total-box {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.money-line {
   display: flex;
   justify-content: space-between;
-  margin: 8px 0;
+  font-size: 15px;
+  color: #475569;
 }
 
-.checkout-summary b {
-  color: var(--color-primary-active);
+.money-line b {
+  color: #172033;
 }
 
-@media (max-width: 1000px) {
-  .layout {
-    flex-direction: column;
+.money-line.final {
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.money-line.final b {
+  color: #3454d1;
+}
+
+.money-line.paid b {
+  color: #15803d;
+}
+
+.money-line.debt b {
+  color: #b45309;
+}
+
+.continue-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 11px 14px;
+  background: #eef2ff;
+  color: #243c9d;
+  font-weight: 900;
+}
+
+.modal-card {
+  width: min(680px, calc(100% - 32px));
+  margin: 60px auto;
+  background: white;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .18);
+}
+
+.small-modal {
+  width: min(460px, calc(100% - 32px));
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.form-grid.one {
+  grid-template-columns: 1fr;
+}
+
+.form-grid label {
+  font-weight: 900;
+}
+
+.form-grid .full {
+  grid-column: 1 / -1;
+}
+
+.error-text {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.switch-auth {
+  text-align: center;
+}
+
+.switch-auth button {
+  border: none;
+  background: transparent;
+  color: #3454d1;
+  font-weight: 900;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1100px) {
+  .header-main {
+    grid-template-columns: auto 1fr auto;
   }
 
-  .sidebar {
-    width: 100%;
+  .category-button,
+  .location-button {
+    display: none;
   }
 
-  .topbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 16px;
-    padding: 20px;
+  .quick-nav {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .home-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .member-card {
+    display: none;
+  }
+
+  .product-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .promo-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .header-main {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-nav {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .search-panel {
+    position: fixed;
+    top: 86px;
+    left: 12px;
+    right: 12px;
+  }
+
+  .search-item {
+    grid-template-columns: 42px 1fr;
+  }
+
+  .search-item strong {
+    grid-column: 2;
+  }
+
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .stats {
-    grid-template-columns: 1fr;
-  }
-
-  .report-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .arch-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .chart-section {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-
-  .chart-legend {
-    width: 100%;
     grid-template-columns: 1fr;
   }
 
@@ -2043,124 +2950,39 @@ button:disabled:hover {
     flex-direction: column;
   }
 
-  .sales-grid {
-    grid-template-columns: 1fr;
-  }
-    table {
+  table {
     display: block;
     overflow-x: auto;
     white-space: nowrap;
   }
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 999;
-  padding: 24px;
-}
-
-.modal-card {
-  width: min(720px, 100%);
-  background: var(--color-bg-container);
-  border-radius: 16px;
-  box-shadow: var(--shadow-secondary);
-  padding: 24px;
-  animation: modalFadeIn 0.2s ease;
-}
-
-.modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.modal-head h2 {
-  margin: 0;
-  color: var(--color-text-base);
-}
-
-.modal-close {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--color-error);
-}
-
-.customer-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-field.full {
-  grid-column: 1 / -1;
-}
-
-.form-field label {
-  font-weight: 700;
-  color: var(--color-text-secondary);
-}
-
-.form-field input,
-.form-field textarea {
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  outline: none;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.form-field input:focus,
-.form-field textarea:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-bg);
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.cancel-btn {
-  background: #6b7280;
-}
-
-.cancel-btn:hover {
-  background: #4b5563;
-}
-
-@keyframes modalFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 700px) {
-  .customer-form-grid {
+@media (max-width: 520px) {
+  .product-grid {
     grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-content h1 {
+    font-size: 28px;
+  }
+
+  .cart-item {
+    grid-template-columns: 58px 1fr;
+  }
+
+  .cart-icon {
+    height: 58px;
+    border-radius: 14px;
+  }
+
+  .cart-row-head,
+  .cart-row-bottom {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>
