@@ -40,6 +40,18 @@ namespace OrderApi.Services
             return MapToDto(customer);
         }
 
+        public async Task<CustomerDto?> GetCustomerByPhoneAsync(string phone)
+        {
+            var customer = await _dbContext.Customers
+                .Include(c => c.Orders)
+                .FirstOrDefaultAsync(c => c.Phone == phone);
+
+            if (customer == null)
+                return null;
+
+            return MapToDto(customer);
+        }
+
         public async Task<List<CustomerDto>> GetAllCustomersAsync()
         {
             var customers = await _dbContext.Customers
@@ -51,7 +63,20 @@ namespace OrderApi.Services
 
         public async Task<CustomerDto> CreateCustomerAsync(CreateCustomerDto dto)
         {
-            // Check if customer code already exists
+            if (string.IsNullOrWhiteSpace(dto.CustomerCode))
+            {
+                var count = await _dbContext.Customers.IgnoreQueryFilters().CountAsync();
+                dto.CustomerCode = $"KH{(count + 1):D6}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.Phone))
+            {
+                var phoneExists = await _dbContext.Customers
+                    .AnyAsync(c => c.Phone == dto.Phone.Trim());
+                if (phoneExists)
+                    throw new InvalidOperationException("Số điện thoại đã được đăng ký.");
+            }
+
             var existing = await _dbContext.Customers
                 .FirstOrDefaultAsync(c => c.CustomerCode == dto.CustomerCode);
 
@@ -94,6 +119,24 @@ namespace OrderApi.Services
             await _dbContext.SaveChangesAsync();
 
             _logger.LogInformation($"Customer {customerId} updated");
+
+            return MapToDto(customer);
+        }
+
+        public async Task<CustomerDto> UpdateCustomerProfileAsync(int customerId, UpdateCustomerProfileDto dto)
+        {
+            var customer = await _dbContext.Customers.FindAsync(customerId);
+            if (customer == null)
+                throw new KeyNotFoundException($"Customer {customerId} not found");
+
+            if (!string.Equals(customer.Phone, dto.Phone.Trim(), StringComparison.Ordinal))
+                throw new InvalidOperationException("Không xác thực được khách hàng.");
+
+            customer.FullName = dto.FullName;
+            customer.Email = dto.Email;
+            customer.Address = dto.Address;
+            customer.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
 
             return MapToDto(customer);
         }

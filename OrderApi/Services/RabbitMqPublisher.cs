@@ -38,7 +38,7 @@ namespace OrderApi.Services
                     durable: true,
                     exclusive: false,
                     autoDelete: false,
-                    arguments: new Dictionary<string, object>(),
+                    arguments: new Dictionary<string, object?>(),
                     noWait: false,
                     cancellationToken: CancellationToken.None)
                     .GetAwaiter()
@@ -55,6 +55,7 @@ namespace OrderApi.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[RabbitMQ] Lỗi publish '{queueName}': {ex.Message}");
+                throw;
             }
         }
     }

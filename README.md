@@ -1,194 +1,147 @@
-# Order & Sales Service - Microservices
+# Order & Sales Service — Nhóm 2
 
-**Dịch vụ quản lý bán hàng trung tâm trong kiến trúc Microservices**
+**Dịch vụ xử lý đơn bán hàng trong kiến trúc Microservices (Đề tài 01)**
 
-## Mô tả
+## Vai trò Nhóm 2
 
-Order & Sales Service là dịch vụ trung tâm chịu trách nhiệm quản lý toàn bộ hoạt động bán hàng của doanh nghiệp. Service này:
+| Chức năng | Mô tả |
+|-----------|--------|
+| OrderDB | Đơn hàng, khách hàng, NCC, thanh toán, công nợ |
+| Sales | Checkout, tính tổng, chiết khấu |
+| Tích hợp N1 | Consume `stock.updated` → `ProductStockCaches` |
+| Tích hợp N3 | Publish `order.created` qua Outbox + RabbitMQ |
 
-- Tiếp nhận yêu cầu tạo đơn hàng từ nhân viên bán hàng
-- Kiểm tra thông tin sản phẩm và tồn kho từ Product & Inventory Service
-- Thực hiện tính toán giá trị đơn hàng, chiết khấu, công nợ
-- Lưu trữ lịch sử giao dịch chi tiết
-- Phát hành sự kiện `order.created` để các dịch vụ khác tiếp nhận
+## Công nghệ
 
-## Chức năng chính
+- **ASP.NET Core 8.0** Web API
+- Entity Framework Core 8 + **SQL Server** (`OrderDB`)
+- JWT Bearer (roles: `Admin`, `Sales`, `Warehouse`)
+- RabbitMQ + Outbox pattern
+- Swagger (Development)
+- Frontend: **Vue 3 + Vite** (`frontend/`)
 
-✅ Quản lý đơn bán hàng  
-✅ Module Sales (checkout, tính tiền, chiết khấu)  
-✅ Module Payment & Debt  
-✅ Quản lý khách hàng (CRM cơ bản)  
-✅ Quản lý nhà cung cấp  
-✅ Quản lý công nợ khách hàng  
-✅ Áp dụng giảm giá và chiết khấu  
-✅ Kiểm tra tình trạng tồn kho trước khi bán  
-✅ Theo dõi lịch sử giao dịch  
-✅ Phát hành sự kiện order.created  
-✅ Hỗ trợ thống kê doanh số bán hàng  
+> ⚠️ Không dùng thư mục `storefront/` — đã deprecated.
 
-## Cơ sở dữ liệu
+## Yêu cầu môi trường
 
-**Database:** OrderDB
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- **ASP.NET Core 8.0 Runtime** (bắt buộc để `dotnet run`)
+- SQL Server 2019+ (hoặc Docker — xem bên dưới)
+- RabbitMQ (tùy chọn; API vẫn chạy nếu RabbitMQ tắt)
+- Node.js 18+ (frontend)
 
-**Bảng dữ liệu chính:**
+## Chạy nhanh (local)
 
-| Bảng | Mô tả |
-|------|-------|
-| Customers | Thông tin khách hàng |
-| Suppliers | Thông tin nhà cung cấp |
-| Orders | Đơn bán hàng |
-| OrderDetails | Chi tiết sản phẩm trong đơn hàng |
-| Payments | Lịch sử thanh toán |
-| Debts | Công nợ khách hàng |
-| ProductStockCaches | Cache tồn kho từ `stock.updated` |
-| OutboxMessages | Hàng đợi event `order.created` |
+### 1. Backend
 
-## Công nghệ sử dụng
-
-- **Framework:** ASP.NET Core 10.0 Web API
-- **ORM:** Entity Framework Core
-- **Database:** SQL Server
-- **Authentication:** JWT Bearer Token
-- **API Documentation:** Swagger/OpenAPI
-- **Containerization:** Docker
-- **Event Bus:** RabbitMQ (Event Communication)
-
-## API Endpoints
-
-### Sales
-- `POST /api/sales/checkout` - Hoàn tất giao dịch bán hàng
-- `POST /api/sales/calculate-total` - Tính tổng tiền
-- `POST /api/sales/apply-discount` - Áp dụng chiết khấu
-
-### Orders
-- `GET /api/orders` - Danh sách đơn hàng (tìm kiếm: `?search=`)
-- `GET /api/orders/{id}` - Chi tiết đơn hàng
-- `POST /api/orders` - Tạo đơn hàng
-- `PUT /api/orders/{id}/status` - Cập nhật trạng thái
-- `PUT /api/orders/{id}/cancel` - Hủy đơn hàng
-- `DELETE /api/orders/{id}` - Xóa đơn hàng (Admin)
-
-### Customers
-- `GET /api/customers` - Danh sách khách hàng
-- `GET /api/customers/{id}` - Chi tiết khách hàng
-- `GET /api/customers/{id}/purchase-history` - Lịch sử mua hàng
-- `GET /api/customers/{id}/debts` - Công nợ khách hàng
-- `POST /api/customers` - Tạo khách hàng
-- `PUT /api/customers/{id}` - Cập nhật khách hàng
-- `DELETE /api/customers/{id}` - Xóa khách hàng (Admin)
-
-### Suppliers
-- `GET /api/suppliers` - Danh sách nhà cung cấp
-- `GET /api/suppliers/{id}` - Chi tiết nhà cung cấp
-- `POST /api/suppliers` - Tạo nhà cung cấp
-- `PUT /api/suppliers/{id}` - Cập nhật nhà cung cấp
-- `DELETE /api/suppliers/{id}` - Xóa nhà cung cấp (Admin)
-
-### Payments
-- `GET /api/payments` - Lịch sử thanh toán
-- `GET /api/payments/{id}` - Chi tiết thanh toán
-- `POST /api/payments` - Ghi nhận thanh toán
-- `GET /api/payments/order/{orderId}` - Thanh toán theo đơn
-
-### Debts
-- `GET /api/debts` - Danh sách công nợ
-- `GET /api/debts/{id}` - Chi tiết công nợ
-- `GET /api/debts/customer/{customerId}` - Công nợ theo khách
-- `POST /api/debts/{id}/pay` - Ghi nhận trả nợ
-- `PUT /api/debts/{id}/status` - Cập nhật trạng thái công nợ
-
-## Kiến trúc Microservices
-
-Order & Sales Service đóng vai trò **trung tâm xử lý nghiệp vụ bán hàng**:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│         Order & Sales Service                           │
-│  (Quản lý bán hàng, đơn hàng, khách hàng, công nợ)    │
-└──────────┬──────────────────────────┬──────────────────┘
-           │                          │
-           ▼                          ▼
-   ┌──────────────────┐      ┌──────────────────┐
-   │ Product &        │      │ User & Report    │
-   │ Inventory        │      │ Service          │
-   │ Service          │      │                  │
-   │                  │      │ (Báo cáo, Thống │
-   │ (Kiểm tra tồn    │      │  kê doanh số)    │
-   │  kho, Sản phẩm)  │      │                  │
-   └──────────────────┘      └──────────────────┘
-```
-
-## Quá trình hoạt động
-
-1. **Tiếp nhận đơn hàng** → Nhân viên bán hàng gửi yêu cầu tạo đơn hàng
-2. **Kiểm tra dữ liệu** → Xác thực khách hàng, sản phẩm, tồn kho
-3. **Tính toán** → Tính giá trị, chiết khấu, công nợ
-4. **Lưu trữ** → Ghi lại đơn hàng và chi tiết vào OrderDB
-5. **Phát hành sự kiện** → Gửi event `order.created` qua RabbitMQ
-6. **Báo cáo** → Các dịch vụ khác tiếp nhận để cập nhật báo cáo, thống kê
-
-## Cài đặt
-
-### Yêu cầu
-- .NET 10.0 SDK
-- SQL Server 2019 hoặc cao hơn
-- RabbitMQ
-- Node.js 18+ (cho Frontend)
-
-### Khởi chạy
-
-**Backend API:**
 ```bash
 cd OrderApi
 dotnet run
 ```
 
-API sẽ chạy tại: `http://localhost:5002`  
-Swagger UI: `http://localhost:5002/swagger`
+- API: `http://localhost:5002`
+- Swagger: `http://localhost:5002/swagger`
 
-**Frontend:**
+### 2. Frontend
+
 ```bash
 cd frontend
 npm install
-node server.js
+npm run dev
 ```
 
-Frontend sẽ chạy tại: `http://localhost:5173`
+- UI: `http://localhost:5173`
+- Vite proxy `/api` → `http://localhost:5002` (xem `frontend/vite.config.js`)
 
-## Xác thực
+### 3. Docker (SQL Server + RabbitMQ + API)
 
-API sử dụng JWT Bearer Token. Thêm header vào request:
+```bash
+docker compose up --build
 ```
-Authorization: Bearer <token>
+
+- API: `http://localhost:5002`
+- RabbitMQ Management: `http://localhost:15672` (guest/guest)
+- SQL Server: `localhost:1433` (sa / `YourStrong@Passw0rd`)
+
+## API chính (PascalCase)
+
+### Auth (demo)
+
+```http
+POST /api/auth/login
+{ "username": "sales01", "role": "Sales" }
 ```
 
-## Cấu hình
+Roles: `Sales`, `Admin`, `Warehouse`
 
-Xem file `appsettings.json` để cấu hình:
-- Kết nối Database
-- JWT Secret Key
-- CORS Origins
-- RabbitMQ Host
+### Sales
+
+| Method | Endpoint | Auth |
+|--------|----------|------|
+| POST | `/api/Sales/Checkout` | Anonymous (khách) / JWT (NV) |
+| POST | `/api/Sales/calculate-total` | Sales, Admin |
+| POST | `/api/Sales/apply-discount` | Sales, Admin |
+
+### Orders
+
+| Method | Endpoint | Auth |
+|--------|----------|------|
+| GET | `/api/Orders?customerId=` | Anonymous (đơn của khách) |
+| GET | `/api/Orders` | Sales, Admin, Warehouse |
+| GET | `/api/Orders/lookup?orderCode=&phone=` | Anonymous |
+| GET | `/api/Orders/{id}` | Anonymous |
+| PUT | `/api/Orders/{id}/status` | Sales, Admin, Warehouse |
+
+### Customers / Suppliers / Payments / Debts
+
+- `GET/POST/PUT/DELETE /api/Customers` (đăng ký + demo-login public)
+- `GET/POST/PUT/DELETE /api/Suppliers`
+- `GET/POST /api/Payments`
+- `GET/POST /api/Debts`
+
+### Tích hợp
+
+- `GET /api/ProductStockCaches` — cache từ `stock.updated`
+- `GET /api/OutboxMessages` — hàng đợi `order.created`
 
 ## Sự kiện RabbitMQ
 
-**Event phát hành:**
-- `order.created` - Qua Outbox → RabbitMQ → User & Report Service
+| Event | Hướng | Mô tả |
+|-------|-------|--------|
+| `stock.updated` | N1 → N2 | Cập nhật `ProductStockCaches` |
+| `order.created` | N2 → N3 | Outbox → RabbitMQ sau checkout |
 
-**Event tiếp nhận:**
-- `stock.updated` - Cập nhật bảng `ProductStockCaches` (không quản lý kho chính)
+## Demo đề xuất
+
+1. Khách: xem SP → giỏ hàng → đăng ký → checkout (chiết khấu / trả một phần → công nợ)
+2. Sales: login footer → quản lý đơn, KH, thanh toán, công nợ
+3. Warehouse: login role `Warehouse` → kho xuất hàng → xác nhận xuất
+4. Integration: trang **Đồng bộ** — Outbox + ProductStockCaches
 
 ## Testing
 
-Chạy unit tests:
 ```bash
 dotnet test
 ```
 
+## Cấu trúc repo
+
+```
+OrderApi/          # Backend ASP.NET Core 8
+frontend/          # Frontend chính (Vue 3)
+OrderApi.Tests/    # Unit tests
+storefront/        # DEPRECATED — không dùng
+docker-compose.yml # SQL + RabbitMQ + API
+```
+
+## Cấu hình
+
+`OrderApi/appsettings.json`:
+
+- `ConnectionStrings:DefaultConnection` — SQL Server
+- `Jwt:*` — khóa JWT demo
+- `RabbitMQ:Host` — hostname RabbitMQ
+
 ## Tác giả
 
-Nhóm 2 - Order & Sales Service
-
-## Giấy phép
-
-MIT
+Nhóm 2 — Order & Sales Service

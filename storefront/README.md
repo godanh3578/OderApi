@@ -1,5 +1,21 @@
-# Vue 3 + Vite
+# ⚠️ DEPRECATED — Không sử dụng cho nộp bài
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Thư mục `storefront/` là **bản frontend cũ**, không còn được bảo trì.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Vấn đề
+
+- API hardcode sai host (`160.250.132.117:3000`)
+- Gọi `POST /api/Orders` thay vì `POST /api/Sales/Checkout`
+- Không tích hợp JWT nhân viên, không đúng luồng Nhóm 2
+
+## Frontend chính thức
+
+Sử dụng thư mục **`frontend/`** ở root repo:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+API backend: `http://localhost:5002` (xem `frontend/.env.development`).

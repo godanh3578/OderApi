@@ -45,11 +45,20 @@ namespace OrderApi.Services
 
         public async Task<PaymentDto> RecordPaymentAsync(int orderId, CreatePaymentDto dto)
         {
-            var order = await _dbContext.Orders.FindAsync(orderId);
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
             if (order == null)
                 throw new KeyNotFoundException($"Order {orderId} not found");
 
-            var paymentCode = $"PAY{DateTime.Now:yyyyMMddHHmmss}";
+            if (dto.Amount <= 0)
+                throw new InvalidOperationException("So tien thanh toan phai lon hon 0.");
+
+            var remaining = order.FinalAmount - order.PaidAmount;
+            if (dto.Amount > remaining)
+                throw new InvalidOperationException("So tien thanh toan khong duoc vuot qua so tien con lai.");
+
+            var paymentCode = $"PAY{DateTime.UtcNow:yyyyMMddHHmmssfff}";
 
             var payment = new Payment
             {
@@ -60,31 +69,38 @@ namespace OrderApi.Services
                 Note = dto.Note,
             };
 
-            if (Enum.TryParse<PaymentMethod>(dto.PaymentMethod, out var method))
+            if (Enum.TryParse<PaymentMethod>(dto.PaymentMethod, true, out var method))
                 payment.PaymentMethod = method;
 
-            if (dto.Amount < 0)
-                throw new InvalidOperationException("Số tiền thanh toán không được nhỏ hơn 0.");
-
-            var remaining = order.FinalAmount - order.PaidAmount;
-            if (dto.Amount > remaining)
-                throw new InvalidOperationException("Số tiền thanh toán không được vượt quá số tiền còn lại.");
-
             order.PaidAmount += dto.Amount;
+            order.DebtAmount = Math.Max(0, order.FinalAmount - order.PaidAmount);
 
-            if (order.PaidAmount >= order.FinalAmount)
+            if (order.DebtAmount <= 0)
             {
                 payment.PaymentStatus = PaymentStatus.Paid;
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.OrderStatus = OrderStatus.Paid;
-                order.DebtAmount = 0;
             }
-            else if (dto.Amount > 0)
+            else
             {
                 payment.PaymentStatus = PaymentStatus.Partial;
                 order.PaymentStatus = PaymentStatus.Partial;
                 order.OrderStatus = OrderStatus.Debt;
-                order.DebtAmount = order.FinalAmount - order.PaidAmount;
+            }
+
+            var debt = await _dbContext.Debts
+                .FirstOrDefaultAsync(d => d.OrderId == orderId && d.DebtStatus != DebtStatus.Paid);
+            if (debt != null)
+            {
+                debt.PaidAmount = Math.Min(debt.DebtAmount, debt.PaidAmount + dto.Amount);
+                debt.DebtStatus = debt.PaidAmount >= debt.DebtAmount ? DebtStatus.Paid : DebtStatus.Partial;
+                debt.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (order.Customer != null)
+            {
+                order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - dto.Amount);
+                order.Customer.UpdatedAt = DateTime.UtcNow;
             }
 
             order.UpdatedAt = DateTime.UtcNow;
@@ -92,12 +108,12 @@ namespace OrderApi.Services
             _dbContext.Payments.Add(payment);
             await _dbContext.SaveChangesAsync();
 
-            _logger.LogInformation($"Payment recorded: {paymentCode} for order {orderId}");
+            _logger.LogInformation("Payment recorded: {PaymentCode} for order {OrderId}", paymentCode, orderId);
 
             return MapToDto(payment);
         }
 
-        private PaymentDto MapToDto(Payment payment)
+        private static PaymentDto MapToDto(Payment payment)
         {
             return new PaymentDto
             {

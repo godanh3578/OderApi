@@ -45,20 +45,30 @@ namespace OrderApi.Services
 
         public async Task<List<DebtDto>> GetAllDebtsAsync()
         {
-            var debts = await _dbContext.Debts.ToListAsync();
+            var debts = await _dbContext.Debts
+                .Include(d => d.Customer)
+                .ToListAsync();
             return debts.Select(MapToDto).ToList();
         }
 
         public async Task<DebtDto> PayDebtAsync(int debtId, CreateDebtPaymentDto dto)
         {
-            var debt = await _dbContext.Debts.FindAsync(debtId);
+            var debt = await _dbContext.Debts
+                .Include(d => d.Customer)
+                .Include(d => d.Order)
+                .FirstOrDefaultAsync(d => d.DebtId == debtId);
             if (debt == null)
                 throw new KeyNotFoundException($"Debt {debtId} not found");
 
-            decimal oldRemainingAmount = debt.RemainingAmount;
+            if (dto.Amount <= 0)
+                throw new InvalidOperationException("Số tiền trả nợ phải lớn hơn 0.");
+
+            var remainingBefore = debt.RemainingAmount;
+            if (dto.Amount > remainingBefore)
+                throw new InvalidOperationException("Số tiền trả không được lớn hơn số tiền còn nợ.");
+
             debt.PaidAmount += dto.Amount;
 
-            // Update status
             if (debt.PaidAmount >= debt.DebtAmount)
             {
                 debt.DebtStatus = DebtStatus.Paid;
@@ -69,12 +79,42 @@ namespace OrderApi.Services
                 debt.DebtStatus = DebtStatus.Partial;
             }
 
-            // Check if overdue
             if (debt.DueDate.HasValue && DateTime.UtcNow > debt.DueDate && debt.DebtStatus != DebtStatus.Paid)
             {
                 debt.DebtStatus = DebtStatus.Overdue;
             }
 
+            var order = debt.Order ?? await _dbContext.Orders.FindAsync(debt.OrderId);
+            if (order != null)
+            {
+                order.PaidAmount = Math.Min(order.FinalAmount, order.PaidAmount + dto.Amount);
+                order.DebtAmount = Math.Max(0, order.FinalAmount - order.PaidAmount);
+                order.PaymentStatus = order.DebtAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Partial;
+                order.OrderStatus = order.DebtAmount <= 0 ? OrderStatus.Paid : OrderStatus.Debt;
+                order.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var customer = debt.Customer ?? await _dbContext.Customers.FindAsync(debt.CustomerId);
+            if (customer != null)
+            {
+                customer.CurrentDebt = Math.Max(0, customer.CurrentDebt - dto.Amount);
+                customer.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var payment = new Payment
+            {
+                OrderId = debt.OrderId,
+                PaymentCode = $"PAY{DateTime.UtcNow:yyyyMMddHHmmssfff}",
+                Amount = dto.Amount,
+                PaymentDate = DateTime.UtcNow,
+                PaymentStatus = debt.RemainingAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Partial,
+                Note = string.IsNullOrWhiteSpace(dto.Note) ? "Debt payment" : dto.Note
+            };
+
+            if (Enum.TryParse<PaymentMethod>(dto.PaymentMethod, true, out var method))
+                payment.PaymentMethod = method;
+
+            _dbContext.Payments.Add(payment);
             debt.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
 
@@ -106,6 +146,7 @@ namespace OrderApi.Services
             {
                 DebtId = debt.DebtId,
                 CustomerId = debt.CustomerId,
+                CustomerName = debt.Customer?.FullName,
                 OrderId = debt.OrderId,
                 DebtAmount = debt.DebtAmount,
                 PaidAmount = debt.PaidAmount,

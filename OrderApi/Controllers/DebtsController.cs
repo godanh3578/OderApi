@@ -6,7 +6,7 @@ using OrderApi.Services;
 namespace OrderApi.Controllers
 {
     [ApiController]
-    [Route("api/debts")]
+    [Route("api/Debts")]
     [Authorize(Roles = "Admin,Sales")]
     public class DebtsController : ControllerBase
     {
@@ -44,6 +44,10 @@ namespace OrderApi.Controllers
             {
                 return NotFound();
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpPost("{id}/pay")]
@@ -57,6 +61,10 @@ namespace OrderApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
         }
 

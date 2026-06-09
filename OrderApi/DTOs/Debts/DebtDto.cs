@@ -16,6 +16,7 @@ namespace OrderApi.DTOs.Debts
     {
         public int DebtId { get; set; }
         public int CustomerId { get; set; }
+        public string? CustomerName { get; set; }
         public int OrderId { get; set; }
         public decimal DebtAmount { get; set; }
         public decimal PaidAmount { get; set; }

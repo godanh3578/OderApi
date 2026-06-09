@@ -1,23 +1,46 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import api, { setStaffToken, getStaffToken } from './api/client'
+import {
+  loadCustomerUser,
+  saveCustomerUser,
+  loadCustomerCart,
+  saveCustomerCart,
+  saveDemoPassword,
+  verifyDemoPassword,
+  saveDemoCustomer,
+  loadDemoCustomer
+} from './utils/customerStorage'
 
-
-
-const API = 'http://192.168.29.23:5002'
+const route = useRoute()
+const router = useRouter()
 
 // ===== PAGE STATE =====
 const activePage = ref('shop')
 const searchText = ref('')
 const showSearchPanel = ref(false)
-const selectedCategory = ref('Tất cả')
+const selectedCategory = ref('')
+const productSort = ref('featured')
+const activeShowcaseTab = ref('deals')
+const showcaseCategory = ref('')
 const cartOpen = ref(false)
+const selectedOrder = ref(null)
+const orderDetailLoading = ref(false)
 
 // ===== AUTH STATE =====
 const showAuthModal = ref(false)
+const showStaffAuthModal = ref(false)
 const authMode = ref('login')
 const authError = ref('')
+const staffAuthError = ref('')
 const currentUser = ref(null)
+const staffUser = ref(null)
+
+const staffLoginForm = ref({
+  username: 'sales01',
+  role: 'Sales'
+})
 
 const loginForm = ref({
   phone: '',
@@ -60,6 +83,8 @@ const debtPayForm = ref({
   amount: 0,
   paymentMethod: 'Cash'
 })
+const showCheckoutConfirmModal = ref(false)
+const checkoutSubmitting = ref(false)
 
 // ===== DATA =====
 const products = ref([])
@@ -78,143 +103,377 @@ const checkout = ref({
   paidAmount: 0
 })
 
-// ===== DEMO DATA =====
+const checkoutShipping = ref({
+  fullName: '',
+  phone: '',
+  address: ''
+})
+
+const accountForm = ref({
+  fullName: '',
+  phone: '',
+  email: '',
+  address: ''
+})
+
+const orderLookupCode = ref('')
+const orderLookupError = ref('')
+const accountSaveMessage = ref('')
+
 const demoProducts = [
   {
-    id: 1,
-    productId: 1,
-    productCode: 'GD001',
-    productName: 'Nồi cơm điện Sunhouse 1.8L',
-    categoryName: 'Gia dụng',
-    sellingPrice: 650000,
-    quantityAvailable: 12,
-    stockStatus: 'InStock',
-    image: '🍚'
-  },
-  {
-    id: 2,
-    productId: 2,
-    productCode: 'GD002',
-    productName: 'Máy xay sinh tố Philips',
-    categoryName: 'Gia dụng',
-    sellingPrice: 890000,
-    quantityAvailable: 8,
-    stockStatus: 'InStock',
-    image: '🥤'
-  },
-  {
-    id: 3,
-    productId: 3,
-    productCode: 'GD003',
-    productName: 'Quạt điện Panasonic',
-    categoryName: 'Gia dụng',
-    sellingPrice: 780000,
-    quantityAvailable: 0,
-    stockStatus: 'OutOfStock',
-    image: '🌀'
-  },
-  {
-    id: 4,
-    productId: 4,
-    productCode: 'DT001',
-    productName: 'Chuột Logitech M331',
+    id: 101,
+    productId: 101,
+    productCode: 'DT101',
+    productName: 'Chuột không dây Logitech M331 Silent',
     categoryName: 'Điện tử',
     sellingPrice: 320000,
     quantityAvailable: 30,
     stockStatus: 'InStock',
-    image: '🖱️'
+    image: '🖱️',
+    manufacturerName: 'Logitech',
+    soldCount: 42,
+    lastUpdatedAt: '2026-06-09T08:00:00Z'
   },
   {
-    id: 5,
-    productId: 5,
-    productCode: 'DT002',
-    productName: 'Bàn phím cơ AKKO',
+    id: 102,
+    productId: 102,
+    productCode: 'DT102',
+    productName: 'Bàn phím cơ AKKO 3087 v2',
     categoryName: 'Điện tử',
     sellingPrice: 1290000,
     quantityAvailable: 9,
     stockStatus: 'InStock',
-    image: '⌨️'
+    image: '⌨️',
+    manufacturerName: 'AKKO',
+    soldCount: 24,
+    lastUpdatedAt: '2026-06-08T09:30:00Z'
   },
   {
-    id: 6,
-    productId: 6,
-    productCode: 'TP001',
-    productName: 'Gạo ST25 túi 5kg',
-    categoryName: 'Thực phẩm',
-    sellingPrice: 185000,
-    quantityAvailable: 25,
+    id: 103,
+    productId: 103,
+    productCode: 'DT103',
+    productName: 'Tai nghe Bluetooth Sony WH-CH520',
+    categoryName: 'Điện tử',
+    sellingPrice: 990000,
+    quantityAvailable: 4,
+    stockStatus: 'LowStock',
+    image: '🎧',
+    manufacturerName: 'Sony',
+    soldCount: 57,
+    lastUpdatedAt: '2026-06-07T10:15:00Z'
+  },
+  {
+    id: 104,
+    productId: 104,
+    productCode: 'GD101',
+    productName: 'Nồi chiên không dầu Sunhouse 6L',
+    categoryName: 'Gia dụng',
+    sellingPrice: 1450000,
+    quantityAvailable: 11,
     stockStatus: 'InStock',
-    image: '🍚'
+    image: '🍟',
+    manufacturerName: 'Sunhouse',
+    soldCount: 35,
+    lastUpdatedAt: '2026-06-06T12:00:00Z'
   },
   {
-    id: 7,
-    productId: 7,
-    productCode: 'TT001',
-    productName: 'Áo thun cotton nam',
-    categoryName: 'Thời trang',
-    sellingPrice: 150000,
-    quantityAvailable: 18,
+    id: 105,
+    productId: 105,
+    productCode: 'GD102',
+    productName: 'Máy xay sinh tố Philips HR2221',
+    categoryName: 'Gia dụng',
+    sellingPrice: 890000,
+    quantityAvailable: 8,
     stockStatus: 'InStock',
-    image: '👕'
+    image: '🥤',
+    manufacturerName: 'Philips',
+    soldCount: 31,
+    lastUpdatedAt: '2026-06-05T08:45:00Z'
   },
   {
-    id: 8,
-    productId: 8,
-    productCode: 'VP001',
+    id: 106,
+    productId: 106,
+    productCode: 'GD103',
+    productName: 'Quạt đứng Panasonic F-308NH',
+    categoryName: 'Gia dụng',
+    sellingPrice: 780000,
+    quantityAvailable: 2,
+    stockStatus: 'LowStock',
+    image: '🌀',
+    manufacturerName: 'Panasonic',
+    soldCount: 49,
+    lastUpdatedAt: '2026-06-09T05:20:00Z'
+  },
+  {
+    id: 107,
+    productId: 107,
+    productCode: 'VP101',
     productName: 'Bút bi Thiên Long hộp 20 cây',
     categoryName: 'Văn phòng phẩm',
     sellingPrice: 65000,
     quantityAvailable: 50,
     stockStatus: 'InStock',
-    image: '🖊️'
-  }
-]
-
-const demoCustomers = [
+    image: '🖊️',
+    manufacturerName: 'Thiên Long',
+    soldCount: 68,
+    lastUpdatedAt: '2026-06-04T07:10:00Z'
+  },
   {
-    id: 1,
-    name: 'Nguyễn Văn A',
-    phone: '0912345678',
-    email: 'a@gmail.com',
-    address: 'Hà Nội',
-    debt: 0
-  }
-]
-
-const demoSuppliers = [
+    id: 108,
+    productId: 108,
+    productCode: 'VP102',
+    productName: 'Sổ tay gáy lò xo Campus A5',
+    categoryName: 'Văn phòng phẩm',
+    sellingPrice: 38000,
+    quantityAvailable: 5,
+    stockStatus: 'LowStock',
+    image: '📒',
+    manufacturerName: 'Campus',
+    soldCount: 22,
+    lastUpdatedAt: '2026-06-09T02:40:00Z'
+  },
   {
-    id: 1,
-    name: 'Công ty Gia dụng ABC',
-    contactPerson: 'Anh Minh',
-    phone: '0988000111',
-    email: 'abc@gmail.com',
-    address: 'Hà Nội',
-    status: 'Active'
+    id: 109,
+    productId: 109,
+    productCode: 'TP101',
+    productName: 'Gạo ST25 túi 5kg',
+    categoryName: 'Thực phẩm',
+    sellingPrice: 185000,
+    quantityAvailable: 25,
+    stockStatus: 'InStock',
+    image: '🌾',
+    manufacturerName: 'ST25',
+    soldCount: 61,
+    lastUpdatedAt: '2026-06-03T11:30:00Z'
+  },
+  {
+    id: 110,
+    productId: 110,
+    productCode: 'TP102',
+    productName: 'Cà phê Arabica Đà Lạt 500g',
+    categoryName: 'Thực phẩm',
+    sellingPrice: 155000,
+    quantityAvailable: 14,
+    stockStatus: 'InStock',
+    image: '☕',
+    manufacturerName: 'LangFarm',
+    soldCount: 37,
+    lastUpdatedAt: '2026-06-08T14:00:00Z'
+  },
+  {
+    id: 111,
+    productId: 111,
+    productCode: 'TT101',
+    productName: 'Áo thun cotton nam basic',
+    categoryName: 'Thời trang',
+    sellingPrice: 150000,
+    quantityAvailable: 18,
+    stockStatus: 'InStock',
+    image: '👕',
+    manufacturerName: 'Đối tác Thời trang',
+    soldCount: 46,
+    lastUpdatedAt: '2026-06-02T09:00:00Z'
+  },
+  {
+    id: 112,
+    productId: 112,
+    productCode: 'PK101',
+    productName: 'Balo laptop Acer Gaming SUV',
+    categoryName: 'Phụ kiện',
+    sellingPrice: 590000,
+    quantityAvailable: 6,
+    stockStatus: 'InStock',
+    image: '🎒',
+    manufacturerName: 'Acer',
+    soldCount: 18,
+    lastUpdatedAt: '2026-06-09T09:10:00Z'
   }
 ]
 
 // ===== API =====
-async function safeGet(url, fallback = []) {
+async function loadProducts() {
   try {
-    const res = await axios.get(url)
-    return Array.isArray(res.data) ? res.data : fallback
-  } catch {
-    return fallback
+    const res = await api.get('/api/ProductStockCaches')
+    const apiProducts = Array.isArray(res.data) ? res.data : []
+    products.value = apiProducts.length > 0 ? apiProducts : demoProducts
+  } catch (error) {
+    console.warn('Đang dùng sản phẩm demo vì chưa tải được dữ liệu Nhóm 1:', error)
+    products.value = demoProducts
+  }
+}
+
+async function loadStaffData() {
+  if (!staffUser.value) return
+
+  try {
+    const ordersRes = await api.get('/api/Orders')
+    orders.value = Array.isArray(ordersRes.data) ? ordersRes.data : []
+
+    if (staffUser.value.role === 'Warehouse') return
+
+    const [customersRes, suppliersRes, paymentsRes, debtsRes, outboxRes] = await Promise.all([
+      api.get('/api/Customers'),
+      api.get('/api/Suppliers'),
+      api.get('/api/Payments'),
+      api.get('/api/Debts'),
+      api.get('/api/OutboxMessages')
+    ])
+
+    customers.value = Array.isArray(customersRes.data) ? customersRes.data : []
+    suppliers.value = Array.isArray(suppliersRes.data) ? suppliersRes.data : []
+    payments.value = Array.isArray(paymentsRes.data) ? paymentsRes.data : []
+    debts.value = Array.isArray(debtsRes.data) ? debtsRes.data : []
+    outboxMessages.value = Array.isArray(outboxRes.data) ? outboxRes.data : []
+  } catch (error) {
+    console.error('Không tải được dữ liệu quản trị:', error)
+  }
+}
+
+async function loadMyOrders() {
+  if (!currentUser.value) {
+    orders.value = []
+    return
+  }
+
+  try {
+    const res = await api.get('/api/Orders', {
+      params: { customerId: currentUser.value.customerId }
+    })
+    orders.value = Array.isArray(res.data) ? res.data : []
+  } catch (error) {
+    console.error('Không tải được đơn của khách:', error)
+    orders.value = []
   }
 }
 
 async function loadAll() {
-  products.value = await safeGet(`${API}/api/ProductStockCaches`, demoProducts)
-  customers.value = await safeGet(`${API}/api/Customers`, demoCustomers)
-  suppliers.value = await safeGet(`${API}/api/Suppliers`, demoSuppliers)
-  orders.value = await safeGet(`${API}/api/Orders`, [])
-  payments.value = await safeGet(`${API}/api/Payments`, [])
-  debts.value = await safeGet(`${API}/api/Debts`, [])
-  outboxMessages.value = await safeGet(`${API}/api/OutboxMessages`, [])
+  await loadProducts()
+  syncCartStock()
+  if (staffUser.value) {
+    await loadStaffData()
+  } else if (currentUser.value) {
+    await loadMyOrders()
+  }
+}
+
+const pagePaths = {
+  shop: '/',
+  cart: '/cart',
+  myOrders: '/my-orders',
+  account: '/account',
+  orders: '/manage/orders',
+  customers: '/manage/customers',
+  suppliers: '/manage/suppliers',
+  payments: '/manage/payments',
+  debts: '/manage/debts',
+  integration: '/manage/integration',
+  warehouse: '/manage/warehouse'
+}
+
+function syncCheckoutAmounts() {
+  const total = finalAmount.value
+  const paid = Number(checkout.value.paidAmount || 0)
+  if (paid > total) {
+    checkout.value.paidAmount = total
+  }
+}
+
+function initCheckoutShipping() {
+  checkout.value.paidAmount = finalAmount.value
+  if (!currentUser.value) return
+  checkoutShipping.value = {
+    fullName: currentUser.value.fullName || '',
+    phone: currentUser.value.phone || '',
+    address: currentUser.value.address || ''
+  }
+}
+
+function initAccountForm() {
+  if (!currentUser.value) return
+  accountForm.value = {
+    fullName: currentUser.value.fullName || '',
+    phone: currentUser.value.phone || '',
+    email: currentUser.value.email || '',
+    address: currentUser.value.address || ''
+  }
+}
+
+function syncCartStock() {
+  for (const item of cart.value) {
+    const product = products.value.find(p => productId(p) === Number(item.productId))
+    if (!product) continue
+
+    item.stock = productBaseStock(product)
+    item.unitPrice = productPrice(product)
+
+    if (item.quantity > item.stock) {
+      item.quantity = item.stock > 0 ? item.stock : 1
+    }
+  }
+  saveCustomerCart(cart.value)
+}
+
+async function applyRoute() {
+  const page = route.meta.page
+  if (!page) return
+
+  if (route.meta.staff && !staffUser.value) {
+    openStaffAuth()
+    router.replace('/')
+    return
+  }
+
+  if (staffUser.value?.role === 'Warehouse' && route.meta.staff && page !== 'orders' && page !== 'warehouse' && page !== 'orderDetail') {
+    alert('Tài khoản kho chỉ được xem đơn hàng cần xuất.')
+    router.replace('/manage/warehouse')
+    return
+  }
+
+  activePage.value = page
+
+  if (page === 'orderDetail') {
+    const id = Number(route.params.id)
+    if (id) await openOrderDetail({ orderId: id }, false)
+  } else if (page === 'myOrders') {
+    await loadMyOrders()
+  } else if (page === 'account') {
+    initAccountForm()
+  } else if (page === 'cart' || page === 'shop') {
+    await loadProducts()
+    syncCartStock()
+    if (page === 'cart') initCheckoutShipping()
+  } else if (route.meta.staff) {
+    await loadStaffData()
+  }
 }
 
 // ===== HELPERS =====
-function openPage(page) {
+async function openPage(page) {
+  const staffPages = ['orders', 'customers', 'suppliers', 'payments', 'debts', 'integration', 'warehouse']
+  const warehousePages = ['orders', 'warehouse', 'orderDetail']
+
+  if (['myOrders', 'account'].includes(page) && !currentUser.value) {
+    openAuth('login')
+    return
+  }
+
+  if (staffPages.includes(page) && !staffUser.value) {
+    alert('Vui lòng đăng nhập nhân viên để truy cập trang quản trị.')
+    openStaffAuth()
+    return
+  }
+
+  if (staffUser.value?.role === 'Warehouse' && staffPages.includes(page) && !warehousePages.includes(page)) {
+    alert('Tài khoản kho chỉ được xem đơn hàng cần xuất.')
+    return
+  }
+
+  if (pagePaths[page]) {
+    router.push(pagePaths[page])
+    return
+  }
+
   activePage.value = page
 }
 
@@ -250,8 +509,84 @@ function productPrice(product) {
   return Number(product.sellingPrice || product.price || 0)
 }
 
-function productStock(product) {
+function productBaseStock(product) {
   return Number(product.quantityAvailable ?? product.stock ?? 0)
+}
+
+function productStock(product) {
+  return Math.max(0, productBaseStock(product) - cartQuantityFor(product))
+}
+
+function categoryIcon(category) {
+  const value = String(category || '').toLowerCase()
+  if (value.includes('gia dụng')) return '🏠'
+  if (value.includes('điện tử')) return '💻'
+  if (value.includes('thực phẩm')) return '🥫'
+  if (value.includes('thời trang')) return '👕'
+  if (value.includes('văn phòng')) return '✏️'
+  if (value.includes('tất cả')) return '🏷️'
+  return '📦'
+}
+
+function productVisual(product) {
+  if (product.image) return product.image
+
+  const name = productName(product).toLowerCase()
+  if (name.includes('nồi') || name.includes('cơm')) return '🍚'
+  if (name.includes('xay') || name.includes('philips')) return '🥤'
+  if (name.includes('quạt')) return '🌀'
+  if (name.includes('chuột')) return '🖱️'
+  if (name.includes('bàn phím')) return '⌨️'
+  if (name.includes('gạo')) return '🌾'
+  if (name.includes('áo')) return '👕'
+  if (name.includes('bút')) return '🖊️'
+
+  return categoryIcon(productCategory(product))
+}
+
+function productTone(product) {
+  const category = productCategory(product).toLowerCase()
+  if (category.includes('gia dụng')) return 'tone-home'
+  if (category.includes('điện tử')) return 'tone-tech'
+  if (category.includes('thực phẩm')) return 'tone-food'
+  if (category.includes('thời trang')) return 'tone-fashion'
+  if (category.includes('văn phòng')) return 'tone-office'
+  return 'tone-default'
+}
+
+function productStockLabel(product) {
+  const stock = productStock(product)
+  if (stock <= 0) return 'Hết hàng'
+  if (stock <= 5) return 'Sắp hết'
+  return 'Sẵn hàng'
+}
+
+function productStockClass(product) {
+  const stock = productStock(product)
+  if (stock <= 0) return 'stock-empty'
+  if (stock <= 5) return 'stock-low'
+  return 'stock-ready'
+}
+
+function productStockPercent(product) {
+  const stock = productStock(product)
+  const baseStock = productBaseStock(product)
+  const maxStock = baseStock > 0 ? baseStock : 50
+  return Math.max(0, Math.min(100, (stock / maxStock) * 100))
+}
+
+function cartQuantityFor(product) {
+  const item = cart.value.find(line => Number(line.productId) === productId(product))
+  return item ? Number(item.quantity || 0) : 0
+}
+
+function cartStockLimit(item) {
+  const product = products.value.find(product => productId(product) === Number(item.productId))
+  return product ? productBaseStock(product) : Number(item.stock || 0)
+}
+
+function cartRemainingForItem(item) {
+  return Math.max(0, cartStockLimit(item) - Number(item.quantity || 0))
 }
 
 function customerId(customer) {
@@ -274,26 +609,172 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString('vi-VN') + ' VNĐ'
 }
 
-function statusLabel(status) {
-  if (typeof status === 'string') return status
+function formatDate(value) {
+  if (!value) return ''
+  return new Date(value).toLocaleDateString('vi-VN')
+}
 
-  return ['Pending', 'Confirmed', 'Paid', 'Debt', 'Cancelled'][Number(status)] || 'Unknown'
+function paymentMethodLabel(method) {
+  const map = {
+    Cash: 'Tiền mặt',
+    BankTransfer: 'Chuyển khoản',
+    EWallet: 'Ví điện tử',
+    QR: 'Thanh toán QR'
+  }
+  return map[method] || method || 'Chưa xác định'
+}
+
+function statusLabel(status) {
+  if (typeof status === 'string') {
+    const labels = {
+      pending: 'Chờ xử lý',
+      confirmed: 'Đã xác nhận',
+      paid: 'Đã thanh toán',
+      partial: 'Thanh toán một phần',
+      debt: 'Còn công nợ',
+      unpaid: 'Chưa thanh toán',
+      cancelled: 'Đã hủy',
+      outofstock: 'Hết hàng',
+      processed: 'Đã xử lý',
+      processing: 'Đang xử lý',
+      completed: 'Hoàn tất',
+      failed: 'Thất bại',
+      active: 'Đang hoạt động',
+      inactive: 'Ngừng hoạt động'
+    }
+
+    return labels[status.trim().toLowerCase()] || status
+  }
+
+  return ['Chờ xử lý', 'Đã xác nhận', 'Đã thanh toán', 'Còn công nợ', 'Đã hủy'][Number(status)] || 'Không xác định'
 }
 
 function statusClass(status) {
-  const value = typeof status === 'string' ? status.toLowerCase() : Number(status)
+  const value = typeof status === 'string' ? status.trim().toLowerCase() : Number(status)
 
-  if (value === 'paid' || value === 2 || value === 'confirmed' || value === 1) return 'status-success'
+  if (value === 'paid' || value === 2 || value === 'confirmed' || value === 1 || value === 'processed') return 'status-success'
   if (value === 'partial' || value === 'debt' || value === 3 || value === 'pending' || value === 0 || value === 'unpaid') return 'status-warning'
-  if (value === 'cancelled' || value === 4 || value === 'outofstock') return 'status-error'
+  if (value === 'cancelled' || value === 4 || value === 'outofstock' || value === 'failed') return 'status-error'
 
   return 'status-info'
+}
+
+function orderTotalAmount(order) {
+  return Number(order?.finalAmount ?? order?.totalAmount ?? 0)
+}
+
+function orderPaidAmount(order) {
+  return Number(order?.paidAmount ?? order?.amountPaid ?? order?.paymentAmount ?? 0)
+}
+
+function orderDebtAmount(order) {
+  const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase()
+
+  if (paymentStatus === 'paid' || paymentStatus === 'completed') return 0
+
+  const explicitDebt = Number(order?.remainingAmount ?? order?.debtAmount ?? order?.balanceDue ?? 0)
+  if (explicitDebt > 0) return explicitDebt
+
+  const calculatedDebt = orderTotalAmount(order) - orderPaidAmount(order)
+  return calculatedDebt > 0 ? calculatedDebt : 0
+}
+
+function paymentStatusText(order) {
+  const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase()
+  const total = orderTotalAmount(order)
+  const paid = orderPaidAmount(order)
+  const debt = orderDebtAmount(order)
+
+  if (paymentStatus === 'paid' || paymentStatus === 'completed' || (total > 0 && paid >= total && debt <= 0)) {
+    return 'Đã thanh toán đủ'
+  }
+
+  if (paymentStatus === 'partial' || (paid > 0 && debt > 0)) {
+    return 'Thanh toán một phần'
+  }
+
+  if (paymentStatus === 'debt') {
+    return paid > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'
+  }
+
+  if (paymentStatus === 'unpaid' || debt > 0 || paid <= 0) {
+    return 'Chưa thanh toán'
+  }
+
+  return statusLabel(order?.paymentStatus || 'unpaid')
+}
+
+function paymentStatusClass(order) {
+  const text = paymentStatusText(order)
+
+  if (text === 'Đã thanh toán đủ') return 'status-success'
+  if (text === 'Thanh toán một phần') return 'status-warning'
+
+  return 'status-error'
+}
+
+function productOrderItems(order) {
+  return order?.items || order?.orderItems || order?.orderDetails || order?.details || []
+}
+
+function productCreatedTime(product) {
+  const value = product.lastUpdatedAt || product.updatedAt || product.createdAt || product.importedAt || product.createdDate
+  const time = value ? new Date(value).getTime() : 0
+  return Number.isFinite(time) ? time : 0
+}
+
+function inferManufacturerFromName(name) {
+  const value = String(name || '').toLowerCase()
+  const knownNames = [
+    'Thiên Long',
+    'Logitech',
+    'Panasonic',
+    'Sunhouse',
+    'Philips',
+    'AKKO',
+    'Apple',
+    'Samsung',
+    'Xiaomi',
+    'Acer',
+    'Lenovo',
+    'Sony',
+    'LG',
+    'ST25'
+  ]
+
+  return knownNames.find(brand => value.includes(brand.toLowerCase())) || ''
+}
+
+function productManufacturer(product) {
+  return (
+    product.manufacturerName ||
+    product.manufacturer ||
+    product.producerName ||
+    product.brandName ||
+    product.brand ||
+    product.supplierName ||
+    product.vendorName ||
+    inferManufacturerFromName(productName(product)) ||
+    `Đối tác ${productCategory(product)}`
+  )
+}
+
+function brandInitials(name) {
+  return String(name || 'RP')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase()
 }
 
 function selectSearchProduct(product) {
   searchText.value = productName(product)
   selectedCategory.value = productCategory(product)
   showSearchPanel.value = false
+  openPage('shop')
+  window.setTimeout(() => scrollToCategory(productCategory(product)), 120)
 }
 
 function closeSearchPanelLater() {
@@ -304,29 +785,71 @@ function closeSearchPanelLater() {
 
 function clearSearchText() {
   searchText.value = ''
-  selectedCategory.value = 'Tất cả'
+  selectedCategory.value = ''
   showSearchPanel.value = true
 }
 
-// ===== COMPUTED =====
+function chooseCategory(category) {
+  selectedCategory.value = category
+  searchText.value = ''
+  showSearchPanel.value = false
+  openPage('shop')
+  window.setTimeout(() => scrollToCategory(category), 120)
+}
+
+function scrollToCatalog() {
+  document.getElementById('product-catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function categorySectionId(category) {
+  return `category-${encodeURIComponent(String(category || 'khac'))}`
+}
+
+function scrollToCategory(category) {
+  const target = document.getElementById(categorySectionId(category))
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+
+  scrollToCatalog()
+}
+
 const categories = computed(() => {
   const values = new Set(products.value.map(productCategory))
-  return ['Tất cả', ...Array.from(values)]
+  return Array.from(values).sort((a, b) => a.localeCompare(b, 'vi'))
+})
+
+const categoryCounts = computed(() => {
+  const counts = {}
+  for (const product of products.value) {
+    const category = productCategory(product)
+    counts[category] = (counts[category] || 0) + 1
+  }
+  return counts
 })
 
 const filteredProducts = computed(() => {
   const keyword = searchText.value.trim().toLowerCase()
 
-  return products.value.filter(product => {
-    const matchCategory =
-      selectedCategory.value === 'Tất cả' || productCategory(product) === selectedCategory.value
-
+  const filtered = products.value.filter(product => {
     const matchSearch =
       !keyword ||
       productName(product).toLowerCase().includes(keyword) ||
-      productCode(product).toLowerCase().includes(keyword)
+      productCode(product).toLowerCase().includes(keyword) ||
+      productCategory(product).toLowerCase().includes(keyword)
 
-    return matchCategory && matchSearch
+    return matchSearch
+  })
+
+  return filtered.sort((a, b) => {
+    if (productSort.value === 'priceAsc') return productPrice(a) - productPrice(b)
+    if (productSort.value === 'priceDesc') return productPrice(b) - productPrice(a)
+    if (productSort.value === 'stockDesc') return productStock(b) - productStock(a)
+
+    const stockDiff = Math.min(productStock(b), 1) - Math.min(productStock(a), 1)
+    if (stockDiff !== 0) return stockDiff
+    return productStock(b) - productStock(a)
   })
 })
 
@@ -359,6 +882,156 @@ const popularProducts = computed(() => {
     .slice(0, 6)
 })
 
+const salesStatsByProduct = computed(() => {
+  const map = new Map()
+
+  for (const order of orders.value) {
+    for (const item of productOrderItems(order)) {
+      const id = Number(item.productId)
+      if (!id) continue
+
+      const quantity = Number(item.quantity || item.qty || 0)
+      const revenue = Number(item.subTotal ?? item.total ?? (Number(item.unitPrice || 0) * quantity))
+      const current = map.get(id) || { quantity: 0, revenue: 0, orders: 0 }
+
+      current.quantity += quantity
+      current.revenue += revenue
+      current.orders += 1
+      map.set(id, current)
+    }
+  }
+
+  return map
+})
+
+const catalogCategorySections = computed(() => {
+  return categories.value
+    .map(category => ({
+      category,
+      products: filteredProducts.value.filter(product => productCategory(product) === category)
+    }))
+    .filter(section => section.products.length > 0)
+})
+
+const dealProducts = computed(() => {
+  return [...products.value]
+    .filter(product => productStock(product) > 0)
+    .sort((a, b) => productPrice(a) - productPrice(b) || productStock(b) - productStock(a))
+    .slice(0, 12)
+})
+
+const hotTrendProducts = computed(() => {
+  const bestByCategory = new Map()
+
+  for (const product of products.value) {
+    const stats = salesStatsByProduct.value.get(productId(product)) || {}
+    const sold = Number(stats.quantity || product.soldCount || product.totalSold || 0)
+    const stockScore = productStock(product) > 0 ? Math.min(productStock(product), 50) : -100
+    const score = sold * 1000 + stockScore + productPrice(product) / 100000
+    const category = productCategory(product)
+    const current = bestByCategory.get(category)
+
+    if (!current || score > current.score) {
+      bestByCategory.set(category, { product, score })
+    }
+  }
+
+  return Array.from(bestByCategory.values())
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.product)
+    .slice(0, 12)
+})
+
+const newArrivalProducts = computed(() => {
+  return [...products.value]
+    .sort((a, b) => {
+      const timeDiff = productCreatedTime(b) - productCreatedTime(a)
+      if (timeDiff !== 0) return timeDiff
+      return productId(b) - productId(a)
+    })
+    .slice(0, 12)
+})
+
+const lowStockProducts = computed(() => {
+  return [...products.value]
+    .filter(product => productStock(product) > 0 && productStock(product) <= 5)
+    .sort((a, b) => productStock(a) - productStock(b) || productPrice(b) - productPrice(a))
+    .slice(0, 12)
+})
+
+const showcaseTabs = computed(() => [
+  { id: 'deals', label: 'Deal sốc mỗi ngày', products: dealProducts.value },
+  { id: 'hot', label: 'Sản phẩm hot trend', products: hotTrendProducts.value },
+  { id: 'new', label: 'Hàng mới về', products: newArrivalProducts.value },
+  { id: 'lowStock', label: 'Sắp hết hàng', products: lowStockProducts.value }
+])
+
+const showcaseCategories = computed(() => {
+  return categories.value.slice(0, 8)
+})
+
+const activeShowcaseProducts = computed(() => {
+  const tab = showcaseTabs.value.find(item => item.id === activeShowcaseTab.value) || showcaseTabs.value[0]
+  const source = tab?.products || []
+
+  if (!showcaseCategory.value) {
+    return source.slice(0, 8)
+  }
+
+  return source
+    .filter(product => productCategory(product) === showcaseCategory.value)
+    .slice(0, 8)
+})
+
+const topManufacturers = computed(() => {
+  const map = new Map()
+
+  for (const product of products.value) {
+    const name = productManufacturer(product)
+    const current = map.get(name) || {
+      name,
+      initials: brandInitials(name),
+      productCount: 0,
+      totalStock: 0,
+      categories: {}
+    }
+
+    const category = productCategory(product)
+    current.productCount += 1
+    current.totalStock += productStock(product)
+    current.categories[category] = (current.categories[category] || 0) + 1
+    map.set(name, current)
+  }
+
+  return Array.from(map.values())
+    .map(item => ({
+      ...item,
+      primaryCategory: Object.entries(item.categories).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Đối tác'
+    }))
+    .sort((a, b) => b.productCount - a.productCount || b.totalStock - a.totalStock || a.name.localeCompare(b.name, 'vi'))
+    .slice(0, 8)
+})
+
+function showcaseProductBadge(product) {
+  if (activeShowcaseTab.value === 'deals') return 'Deal tốt'
+  if (activeShowcaseTab.value === 'hot') {
+    const stats = salesStatsByProduct.value.get(productId(product))
+    return stats?.quantity ? `Đã bán ${stats.quantity}` : 'Đang được quan tâm'
+  }
+  if (activeShowcaseTab.value === 'new') return 'Hàng mới'
+  if (activeShowcaseTab.value === 'lowStock') return 'Sắp hết'
+
+  return productStockLabel(product)
+}
+
+const inStockProductCount = computed(() => {
+  return products.value.filter(product => productStock(product) > 0).length
+})
+
+const lowStockProductCount = computed(() => {
+  return products.value.filter(product => productStock(product) > 0 && productStock(product) <= 5).length
+})
+
 const cartTotalQuantity = computed(() => {
   return cart.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
 })
@@ -380,7 +1053,7 @@ const debtAmount = computed(() => {
 })
 
 const totalRevenue = computed(() => {
-  return orders.value.reduce((sum, order) => sum + Number(order.finalAmount || order.totalAmount || 0), 0)
+  return orders.value.reduce((sum, order) => sum + orderTotalAmount(order), 0)
 })
 
 const totalDebt = computed(() => {
@@ -389,8 +1062,46 @@ const totalDebt = computed(() => {
 
 const myOrders = computed(() => {
   if (!currentUser.value) return []
-
   return orders.value.filter(order => Number(order.customerId) === Number(currentUser.value.customerId))
+})
+
+const warehouseOrders = computed(() => {
+  return orders.value.filter(order => {
+    const status = String(order.orderStatus || order.status || '').toLowerCase()
+    return status !== 'cancelled' && status !== '4'
+  })
+})
+
+const isStaff = computed(() => !!staffUser.value)
+const isAdmin = computed(() => staffUser.value?.role === 'Admin')
+const isSales = computed(() => staffUser.value?.role === 'Sales')
+const isWarehouse = computed(() => staffUser.value?.role === 'Warehouse')
+const canManageSales = computed(() => isAdmin.value || isSales.value)
+const canViewWarehouse = computed(() => isAdmin.value || isWarehouse.value)
+const canViewIntegration = computed(() => canManageSales.value)
+
+const myOrderCount = computed(() => myOrders.value.length)
+
+const myTotalDebt = computed(() => {
+  return myOrders.value.reduce((sum, order) => sum + orderDebtAmount(order), 0)
+})
+
+const expectedDebtDueDate = computed(() => {
+  const date = new Date()
+  date.setDate(date.getDate() + 30)
+  return date
+})
+
+const processedOutboxCount = computed(() => {
+  return outboxMessages.value.filter(message => String(message.status || '').toLowerCase() === 'processed').length
+})
+
+const pendingOutboxCount = computed(() => {
+  return outboxMessages.value.filter(message => String(message.status || '').toLowerCase() === 'pending').length
+})
+
+const failedOutboxCount = computed(() => {
+  return outboxMessages.value.filter(message => String(message.status || '').toLowerCase() === 'failed').length
 })
 
 // ===== AUTH =====
@@ -403,6 +1114,41 @@ function openAuth(mode = 'login') {
 function closeAuth() {
   showAuthModal.value = false
   authError.value = ''
+}
+
+async function finishCustomerAuth(customer) {
+  currentUser.value = {
+    role: 'Customer',
+    customerId: customerId(customer),
+    fullName: customerName(customer),
+    phone: customer.phone,
+    email: customer.email,
+    address: customer.address
+  }
+
+  checkout.value.customerId = currentUser.value.customerId
+  saveCustomerUser(currentUser.value)
+  saveDemoCustomer(currentUser.value)
+  initCheckoutShipping()
+  closeAuth()
+  await loadMyOrders()
+}
+
+function createLocalDemoCustomer() {
+  const phone = registerForm.value.phone.trim()
+
+  return {
+    role: 'Customer',
+    customerId: Date.now(),
+    customerCode: `DEMO${phone.slice(-4) || '0000'}`,
+    fullName: registerForm.value.fullName.trim(),
+    phone,
+    email: registerForm.value.email.trim(),
+    address: registerForm.value.address.trim(),
+    currentDebt: 0,
+    totalSpent: 0,
+    status: 'Active'
+  }
 }
 
 async function registerCustomer() {
@@ -423,56 +1169,31 @@ async function registerCustomer() {
     return
   }
 
-  const payload = {
-    name: registerForm.value.fullName,
-    fullName: registerForm.value.fullName,
-    phone: registerForm.value.phone,
-    email: registerForm.value.email,
-    address: registerForm.value.address,
-    debt: 0,
-    currentDebt: 0
-  }
-
-  let createdCustomer = null
-
   try {
-    const res = await axios.post(`${API}/api/Customers`, payload)
-    createdCustomer = res.data
-  } catch {
-    const id = getNextId(customers.value)
+    const res = await api.post('/api/Customers', {
+      fullName: registerForm.value.fullName,
+      phone: registerForm.value.phone,
+      email: registerForm.value.email,
+      address: registerForm.value.address
+    })
 
-    createdCustomer = {
-      id,
-      customerId: id,
-      ...payload
+    saveDemoPassword(registerForm.value.phone, registerForm.value.password)
+    await finishCustomerAuth(res.data)
+    registerForm.value = { fullName: '', phone: '', email: '', address: '', password: '' }
+  } catch (error) {
+    if (error.response) {
+      authError.value = error.response.data?.message || 'Đăng ký thất bại.'
+      return
     }
+
+    const localCustomer = createLocalDemoCustomer()
+    saveDemoPassword(localCustomer.phone, registerForm.value.password)
+    await finishCustomerAuth(localCustomer)
+    registerForm.value = { fullName: '', phone: '', email: '', address: '', password: '' }
   }
-
-  customers.value.push(createdCustomer)
-
-  currentUser.value = {
-    role: 'Customer',
-    customerId: customerId(createdCustomer),
-    fullName: customerName(createdCustomer),
-    phone: createdCustomer.phone,
-    email: createdCustomer.email,
-    address: createdCustomer.address
-  }
-
-  checkout.value.customerId = currentUser.value.customerId
-
-  registerForm.value = {
-    fullName: '',
-    phone: '',
-    email: '',
-    address: '',
-    password: ''
-  }
-
-  closeAuth()
 }
 
-function loginCustomer() {
+async function loginCustomer() {
   authError.value = ''
 
   if (!loginForm.value.phone.trim()) {
@@ -480,41 +1201,203 @@ function loginCustomer() {
     return
   }
 
-  const found = customers.value.find(customer => String(customer.phone) === String(loginForm.value.phone))
-
-  if (!found) {
-    authError.value = 'Không tìm thấy khách hàng. Vui lòng đăng ký.'
+  if (!loginForm.value.password.trim()) {
+    authError.value = 'Vui lòng nhập mật khẩu demo.'
     return
   }
 
-  currentUser.value = {
-    role: 'Customer',
-    customerId: customerId(found),
-    fullName: customerName(found),
-    phone: found.phone,
-    email: found.email,
-    address: found.address
+  if (!verifyDemoPassword(loginForm.value.phone, loginForm.value.password)) {
+    authError.value = 'Mật khẩu không đúng. Mật khẩu demo được lưu trên trình duyệt khi đăng ký.'
+    return
   }
 
-  checkout.value.customerId = currentUser.value.customerId
+  try {
+    const res = await api.post('/api/Customers/demo-login', {
+      phone: loginForm.value.phone
+    })
 
-  loginForm.value = {
-    phone: '',
-    password: ''
+    await finishCustomerAuth(res.data)
+    loginForm.value = { phone: '', password: '' }
+  } catch (error) {
+    const localCustomer = loadDemoCustomer(loginForm.value.phone.trim())
+    if (localCustomer) {
+      await finishCustomerAuth(localCustomer)
+      loginForm.value = { phone: '', password: '' }
+      return
+    }
+
+    authError.value = error.response?.data?.message || 'Không tìm thấy khách hàng. Vui lòng đăng ký.'
   }
-
-  closeAuth()
 }
 
 function logout() {
   currentUser.value = null
+  saveCustomerUser(null)
   checkout.value.customerId = null
+  orders.value = []
+  router.push('/')
+}
+
+async function saveAccountProfile() {
+  accountSaveMessage.value = ''
+
+  if (!currentUser.value) {
+    openAuth('login')
+    return
+  }
+
+  try {
+    const res = await api.put(`/api/Customers/${currentUser.value.customerId}/profile`, {
+      phone: accountForm.value.phone,
+      fullName: accountForm.value.fullName,
+      email: accountForm.value.email,
+      address: accountForm.value.address
+    })
+
+    currentUser.value = {
+      ...currentUser.value,
+      fullName: res.data.fullName,
+      email: res.data.email,
+      address: res.data.address
+    }
+
+    saveCustomerUser(currentUser.value)
+    initCheckoutShipping()
+    accountSaveMessage.value = 'Đã cập nhật thông tin tài khoản.'
+  } catch (error) {
+    accountSaveMessage.value = error.response?.data?.message || 'Cập nhật thất bại.'
+  }
+}
+
+async function lookupOrderByCode() {
+  orderLookupError.value = ''
+
+  if (!currentUser.value) {
+    openAuth('login')
+    return
+  }
+
+  if (!orderLookupCode.value.trim()) {
+    orderLookupError.value = 'Vui lòng nhập mã đơn hàng.'
+    return
+  }
+
+  try {
+    const res = await api.get('/api/Orders/lookup', {
+      params: {
+        orderCode: orderLookupCode.value.trim(),
+        phone: currentUser.value.phone
+      }
+    })
+
+    orderLookupCode.value = ''
+    await openOrderDetail(res.data)
+  } catch (error) {
+    orderLookupError.value = error.response?.data?.message || 'Không tìm thấy đơn hàng phù hợp.'
+  }
+}
+
+function openStaffAuth() {
+  staffAuthError.value = ''
+  showStaffAuthModal.value = true
+}
+
+function closeStaffAuth() {
+  showStaffAuthModal.value = false
+  staffAuthError.value = ''
+}
+
+async function loginStaff() {
+  staffAuthError.value = ''
+
+  try {
+    const res = await api.post('/api/auth/login', {
+      username: staffLoginForm.value.username,
+      role: staffLoginForm.value.role
+    })
+
+    setStaffToken(res.data.token)
+    staffUser.value = {
+      username: res.data.username,
+      role: res.data.role
+    }
+
+    closeStaffAuth()
+    await loadStaffData()
+  } catch (error) {
+    staffAuthError.value = error.response?.data?.message || 'Đăng nhập nhân viên thất bại.'
+  }
+}
+
+function logoutStaff() {
+  setStaffToken('')
+  staffUser.value = null
+  customers.value = []
+  suppliers.value = []
+  payments.value = []
+  debts.value = []
+  outboxMessages.value = []
+
+  if (currentUser.value) {
+    loadMyOrders()
+  } else {
+    orders.value = []
+  }
+
   openPage('shop')
+}
+
+async function updateOrderStatus(order, status) {
+  const orderId = order.orderId || order.id
+  if (!orderId) return
+
+  try {
+    const res = await api.put(`/api/Orders/${orderId}/status`, { status })
+    const updated = res.data
+    alert('Đã cập nhật trạng thái đơn.')
+
+    if (selectedOrder.value && Number(selectedOrder.value.orderId || selectedOrder.value.id) === Number(orderId)) {
+      selectedOrder.value = { ...selectedOrder.value, ...updated }
+    }
+
+    if (staffUser.value) {
+      await loadStaffData()
+    } else if (currentUser.value) {
+      await loadMyOrders()
+    }
+  } catch (error) {
+    alert(error.response?.data?.message || 'Không cập nhật được trạng thái.')
+  }
+}
+
+async function openOrderDetail(order, navigate = true) {
+  const orderId = order.orderId || order.id
+  if (!orderId) return
+
+  selectedOrder.value = order
+  activePage.value = 'orderDetail'
+  orderDetailLoading.value = true
+
+  if (navigate) {
+    router.push(`/orders/${orderId}`)
+  }
+
+  try {
+    const res = await api.get(`/api/Orders/${orderId}`)
+    selectedOrder.value = res.data
+  } catch (error) {
+    console.error('Không tải được chi tiết đơn:', error)
+  } finally {
+    orderDetailLoading.value = false
+  }
 }
 
 // ===== CART =====
 function addToCart(product) {
-  if (productStock(product) <= 0) {
+  const availableStock = productStock(product)
+  const stockLimit = productBaseStock(product)
+
+  if (availableStock <= 0) {
     alert('Sản phẩm đã hết hàng.')
     return
   }
@@ -523,11 +1406,13 @@ function addToCart(product) {
   const existed = cart.value.find(item => item.productId === id)
 
   if (existed) {
-    if (existed.quantity + 1 > productStock(product)) {
+    if (existed.quantity + 1 > stockLimit) {
       alert('Số lượng mua không được vượt quá tồn kho.')
       return
     }
 
+    existed.stock = stockLimit
+    existed.unitPrice = productPrice(product)
     existed.quantity++
   } else {
     cart.value.push({
@@ -537,53 +1422,120 @@ function addToCart(product) {
       categoryName: productCategory(product),
       unitPrice: productPrice(product),
       quantity: 1,
-      stock: productStock(product),
-      image: product.image || '📦'
+      stock: stockLimit,
+      image: productVisual(product)
     })
   }
 
   cartOpen.value = true
+  saveCustomerCart(cart.value)
 }
 
 function removeFromCart(id) {
   cart.value = cart.value.filter(item => item.productId !== id)
+  saveCustomerCart(cart.value)
 }
 
 function updateQuantity(item, value) {
-  const quantity = Number(value)
+  const quantity = Math.floor(Number(value))
+  const stockLimit = cartStockLimit(item)
+  item.stock = stockLimit
 
-  if (quantity < 1) {
+  if (!Number.isFinite(quantity) || quantity < 1) {
     item.quantity = 1
     return
   }
 
-  if (quantity > item.stock) {
+  if (quantity > stockLimit) {
     alert('Số lượng mua không được vượt quá tồn kho.')
-    item.quantity = item.stock
+    item.quantity = stockLimit
     return
   }
 
   item.quantity = quantity
+  saveCustomerCart(cart.value)
 }
 
-function reduceProductStock(items) {
-  for (const item of items) {
-    const product = products.value.find(p => productId(p) === Number(item.productId))
-    if (!product) continue
+function applyCheckoutShippingToUser() {
+  if (!currentUser.value) return
 
-    const remain = productStock(product) - Number(item.quantity || 0)
-
-    if (product.quantityAvailable !== undefined) {
-      product.quantityAvailable = remain > 0 ? remain : 0
-    } else {
-      product.stock = remain > 0 ? remain : 0
-    }
-
-    product.stockStatus = productStock(product) > 0 ? 'InStock' : 'OutOfStock'
+  currentUser.value = {
+    ...currentUser.value,
+    fullName: checkoutShipping.value.fullName,
+    phone: checkoutShipping.value.phone,
+    address: checkoutShipping.value.address
   }
+
+  saveCustomerUser(currentUser.value)
 }
 
 // ===== ORDER CHECKOUT =====
+async function recalculateCheckout() {
+  if (cart.value.length === 0) {
+    alert('Giỏ hàng đang trống.')
+    return
+  }
+
+  syncCheckoutAmounts()
+
+  try {
+    const res = await api.post('/api/Sales/calculate-total', {
+      items: cart.value.map(item => ({
+        productId: item.productId,
+        quantity: Number(item.quantity)
+      })),
+      discountAmount: Number(checkout.value.discountAmount || 0)
+    })
+    const data = res.data?.data || res.data
+    if (data?.finalAmount != null) {
+      checkout.value.paidAmount = Math.min(
+        Number(checkout.value.paidAmount || data.finalAmount),
+        Number(data.finalAmount)
+      )
+    }
+    alert(`Tổng: ${formatMoney(data?.totalAmount || cartTotal.value)} · Chiết khấu: ${formatMoney(data?.discountAmount || 0)} · Thanh toán: ${formatMoney(data?.finalAmount || finalAmount.value)}`)
+  } catch (error) {
+    alert(error.response?.data?.message || 'Không tính được tổng tiền.')
+  }
+}
+
+function prepareCheckoutConfirmation() {
+  if (cart.value.length === 0) {
+    alert('Gio hang dang trong.')
+    return
+  }
+
+  if (!currentUser.value) {
+    alert('Vui long dang nhap hoac dang ky khach hang truoc khi dat hang.')
+    openAuth('login')
+    return
+  }
+
+  if (!checkoutShipping.value.address.trim()) {
+    alert('Vui long nhap dia chi nhan hang.')
+    return
+  }
+
+  const overStockItem = cart.value.find(item => Number(item.quantity || 0) > cartStockLimit(item))
+  if (overStockItem) {
+    alert(`${productName(overStockItem)} chỉ còn ${cartStockLimit(overStockItem)} sản phẩm trong kho.`)
+    return
+  }
+
+  syncCheckoutAmounts()
+  showCheckoutConfirmModal.value = true
+}
+
+function closeCheckoutConfirmModal() {
+  if (!checkoutSubmitting.value) showCheckoutConfirmModal.value = false
+}
+
+async function confirmCheckout() {
+  checkoutSubmitting.value = true
+  await createOrder()
+  checkoutSubmitting.value = false
+}
+
 async function createOrder() {
   if (cart.value.length === 0) {
     alert('Giỏ hàng đang trống.')
@@ -596,102 +1548,47 @@ async function createOrder() {
     return
   }
 
-  checkout.value.customerId = currentUser.value.customerId
-  checkout.value.discountAmount = 0
-  checkout.value.paidAmount = cartTotal.value
+  if (!checkoutShipping.value.address.trim()) {
+    alert('Vui lòng nhập địa chỉ nhận hàng.')
+    return
+  }
+
+  try {
+    await api.put(`/api/Customers/${currentUser.value.customerId}/profile`, {
+      phone: currentUser.value.phone,
+      fullName: checkoutShipping.value.fullName || currentUser.value.fullName,
+      email: currentUser.value.email || '',
+      address: checkoutShipping.value.address
+    })
+    applyCheckoutShippingToUser()
+  } catch (error) {
+    alert(error.response?.data?.message || 'Không cập nhật được địa chỉ nhận hàng.')
+    return
+  }
+
+  syncCheckoutAmounts()
 
   const payload = {
     customerId: Number(currentUser.value.customerId),
-    discountAmount: 0,
+    discountAmount: Number(checkout.value.discountAmount || 0),
     paymentMethod: checkout.value.paymentMethod,
-    paidAmount: cartTotal.value,
+    paidAmount: Number(checkout.value.paidAmount ?? finalAmount.value),
     items: cart.value.map(item => ({
       productId: item.productId,
-      productCode: item.productCode,
-      productName: item.productName,
-      quantity: Number(item.quantity),
-      unitPrice: Number(item.unitPrice),
-      subTotal: Number(item.quantity) * Number(item.unitPrice)
+      quantity: Number(item.quantity)
     }))
   }
 
   try {
-    let createdOrder = null
+    const res = await api.post('/api/Sales/Checkout', payload)
+    const createdOrder = res.data?.data || res.data
 
-    try {
-      const res = await axios.post(`${API}/api/sales/checkout`, payload)
-      createdOrder = res.data?.data || res.data
-    } catch {
-      const res = await axios.post(`${API}/api/Orders`, {
-        customerId: payload.customerId,
-        totalAmount: cartTotal.value,
-        discountAmount: 0,
-        finalAmount: cartTotal.value,
-        paidAmount: cartTotal.value,
-        debtAmount: 0,
-        paymentMethod: payload.paymentMethod,
-        paymentStatus: 'Paid',
-        orderStatus: 'Paid',
-        status: 2,
-        items: payload.items
-      })
-
-      createdOrder = res.data
-    }
-
-    if (!createdOrder || typeof createdOrder !== 'object') {
-      createdOrder = {
-        id: getNextId(orders.value),
-        customerId: payload.customerId,
-        customerName: currentUser.value.fullName,
-        customer: {
-          id: payload.customerId,
-          name: currentUser.value.fullName,
-          phone: currentUser.value.phone
-        },
-        orderDate: new Date().toISOString(),
-        totalAmount: cartTotal.value,
-        discountAmount: 0,
-        finalAmount: cartTotal.value,
-        paidAmount: cartTotal.value,
-        debtAmount: 0,
-        paymentMethod: payload.paymentMethod,
-        paymentStatus: 'Paid',
-        orderStatus: 'Paid',
-        status: 2,
-        items: payload.items
-      }
-    }
-
-    orders.value.push(createdOrder)
-
-    const orderId = createdOrder.id || createdOrder.orderId || getNextId(orders.value)
-    const paymentId = getNextId(payments.value)
-
-    payments.value.push({
-      id: paymentId,
-      orderId,
-      paymentCode: `PAY${String(paymentId).padStart(6, '0')}`,
-      paymentMethod: payload.paymentMethod,
-      amount: payload.paidAmount,
-      paymentStatus: 'Paid',
-      paymentDate: new Date().toISOString()
-    })
-
-    outboxMessages.value.push({
-      id: getNextId(outboxMessages.value),
-      eventName: 'order.created',
-      status: 'Pending',
-      createdAt: new Date().toISOString()
-    })
-
-    reduceProductStock(payload.items)
-
-    alert('Đặt hàng thành công.')
+    alert(res.data?.message || 'Đặt hàng thành công.')
 
     cart.value = []
+    saveCustomerCart([])
     cartOpen.value = false
-
+    showCheckoutConfirmModal.value = false
     checkout.value = {
       customerId: currentUser.value.customerId,
       discountAmount: 0,
@@ -699,10 +1596,14 @@ async function createOrder() {
       paidAmount: 0
     }
 
+    await Promise.all([loadProducts(), loadMyOrders()])
     openPage('myOrders')
+
+    if (createdOrder?.orderId) {
+      await openOrderDetail(createdOrder)
+    }
   } catch (error) {
-    console.log(error)
-    alert('Lỗi khi tạo đơn hàng.')
+    alert(error.response?.data?.message || 'Lỗi khi tạo đơn hàng.')
   }
 }
 
@@ -742,27 +1643,29 @@ async function saveCustomer() {
     currentDebt: Number(customerForm.value.debt || 0)
   }
 
-  if (editingCustomer.value) {
-    try {
-      const res = await axios.put(`${API}/api/Customers/${customerId(editingCustomer.value)}`, {
-        ...editingCustomer.value,
-        ...payload
+  try {
+    if (editingCustomer.value) {
+      const res = await api.put(`/api/Customers/${customerId(editingCustomer.value)}`, {
+        fullName: payload.fullName,
+        phone: payload.phone,
+        email: payload.email,
+        address: payload.address,
+        status: 'Active'
       })
-
       Object.assign(editingCustomer.value, res.data)
-    } catch {
-      Object.assign(editingCustomer.value, payload)
-    }
-  } else {
-    try {
-      const res = await axios.post(`${API}/api/Customers`, payload)
-      customers.value.push(res.data)
-    } catch {
-      customers.value.push({
-        id: getNextId(customers.value),
-        ...payload
+    } else {
+      const res = await api.post('/api/Customers', {
+        fullName: payload.fullName,
+        phone: payload.phone,
+        email: payload.email,
+        address: payload.address
       })
+      customers.value.push(res.data)
     }
+    await loadStaffData()
+  } catch (error) {
+    alert(error.response?.data?.message || 'Lưu khách hàng thất bại.')
+    return
   }
 
   closeCustomerModal()
@@ -805,27 +1708,32 @@ async function saveSupplier() {
     status: supplierForm.value.status
   }
 
-  if (editingSupplier.value) {
-    try {
-      const res = await axios.put(`${API}/api/Suppliers/${supplierId(editingSupplier.value)}`, {
-        ...editingSupplier.value,
-        ...payload
+  try {
+    if (editingSupplier.value) {
+      const res = await api.put(`/api/Suppliers/${supplierId(editingSupplier.value)}`, {
+        supplierName: payload.supplierName,
+        contactPerson: payload.contactPerson,
+        phone: payload.phone,
+        email: payload.email,
+        address: payload.address,
+        status: payload.status
       })
-
       Object.assign(editingSupplier.value, res.data)
-    } catch {
-      Object.assign(editingSupplier.value, payload)
-    }
-  } else {
-    try {
-      const res = await axios.post(`${API}/api/Suppliers`, payload)
-      suppliers.value.push(res.data)
-    } catch {
-      suppliers.value.push({
-        id: getNextId(suppliers.value),
-        ...payload
+    } else {
+      const res = await api.post('/api/Suppliers', {
+        supplierCode: `NCC${String(getNextId(suppliers.value)).padStart(4, '0')}`,
+        supplierName: payload.supplierName,
+        contactPerson: payload.contactPerson,
+        phone: payload.phone,
+        email: payload.email,
+        address: payload.address
       })
+      suppliers.value.push(res.data)
     }
+    await loadStaffData()
+  } catch (error) {
+    alert(error.response?.data?.message || 'Lưu nhà cung cấp thất bại.')
+    return
   }
 
   closeSupplierModal()
@@ -864,33 +1772,67 @@ async function payDebt() {
   }
 
   try {
-    await axios.post(`${API}/api/Debts/${selectedDebt.value.id || selectedDebt.value.debtId}/pay`, {
+    await api.post(`/api/Debts/${selectedDebt.value.id || selectedDebt.value.debtId}/pay`, {
       amount,
       paymentMethod: debtPayForm.value.paymentMethod
     })
 
-    await loadAll()
-  } catch {
-    const remaining = remainingBefore - amount
-    selectedDebt.value.remainingAmount = remaining > 0 ? remaining : 0
-    selectedDebt.value.paidAmount = Number(selectedDebt.value.paidAmount || 0) + amount
-    selectedDebt.value.debtStatus = selectedDebt.value.remainingAmount === 0 ? 'Paid' : 'Partial'
-
-    payments.value.push({
-      id: getNextId(payments.value),
-      orderId: selectedDebt.value.orderId,
-      paymentCode: `PAY${String(getNextId(payments.value)).padStart(6, '0')}`,
-      paymentMethod: debtPayForm.value.paymentMethod,
-      amount,
-      paymentStatus: selectedDebt.value.remainingAmount === 0 ? 'Paid' : 'Partial',
-      paymentDate: new Date().toISOString()
-    })
+    await loadStaffData()
+    closeDebtModal()
+  } catch (error) {
+    alert(error.response?.data?.message || 'Ghi nhận trả nợ thất bại.')
   }
-
-  closeDebtModal()
 }
 
-onMounted(loadAll)
+watch(cart, () => {
+  saveCustomerCart(cart.value)
+}, { deep: true })
+
+watch(cartOpen, (isOpen) => {
+  if (isOpen) {
+    syncCartStock()
+    initCheckoutShipping()
+  }
+})
+
+watch(() => route.fullPath, () => {
+  applyRoute()
+})
+
+onMounted(async () => {
+  cart.value = loadCustomerCart()
+
+  const savedCustomer = loadCustomerUser()
+  if (savedCustomer) {
+    currentUser.value = savedCustomer
+    checkout.value.customerId = savedCustomer.customerId
+    initCheckoutShipping()
+  }
+
+  const savedToken = getStaffToken()
+  if (savedToken) {
+    try {
+      const payload = JSON.parse(atob(savedToken.split('.')[1]))
+      staffUser.value = {
+        username: payload.unique_name || payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] || 'staff',
+        role: payload.role || 'Sales'
+      }
+      await loadStaffData()
+    } catch {
+      setStaffToken('')
+    }
+  }
+
+  await loadProducts()
+  syncCartStock()
+
+  if (currentUser.value) {
+    await loadMyOrders()
+  }
+
+  await applyRoute()
+})
+
 </script>
 
 <template>
@@ -899,10 +1841,18 @@ onMounted(loadAll)
     <header class="site-header">
       <div class="header-top">
         <div class="header-top-inner">
-          <span>✅ Order & Sales Service</span>
-          <span>🚚 Tạo đơn nhanh</span>
-          <span>📦 Dữ liệu sản phẩm từ Nhóm 1</span>
-          <span>🔄 Event order.created gửi Nhóm 3</span>
+          <div class="promo-marquee">
+            <span>🔥 Flash Sale hôm nay - giảm đến 30%</span>
+            <span>🚚 Miễn phí giao hàng cho đơn từ 500K</span>
+            <span>🎁 Tặng voucher 50K cho khách hàng mới</span>
+            <span>⚡ Mua nhanh trong khung giờ vàng 12:00 - 14:00</span>
+            <span>🛒 Mua nhiều giảm thêm tại giỏ hàng</span>
+            <span>🔥 Flash Sale hôm nay - giảm đến 30%</span>
+            <span>🚚 Miễn phí giao hàng cho đơn từ 500K</span>
+            <span>🎁 Tặng voucher 50K cho khách hàng mới</span>
+            <span>⚡ Mua nhanh trong khung giờ vàng 12:00 - 14:00</span>
+            <span>🛒 Mua nhiều giảm thêm tại giỏ hàng</span>
+          </div>
         </div>
       </div>
 
@@ -910,10 +1860,6 @@ onMounted(loadAll)
         <button class="logo" @click="openPage('shop')">
           <span class="logo-icon">R</span>
           <span>RetailERP</span>
-        </button>
-
-        <button class="header-action category-button">
-          ☰ Danh mục
         </button>
 
         <button class="header-action location-button">
@@ -961,11 +1907,6 @@ onMounted(loadAll)
             </div>
 
             <div v-else class="search-section">
-              <div class="search-title">
-                <span>🔥 Sản phẩm được mua nhiều / nên gợi ý</span>
-                <b>Dựa trên kho Nhóm 1</b>
-              </div>
-
               <button
                 v-for="product in popularProducts"
                 :key="productId(product)"
@@ -985,7 +1926,7 @@ onMounted(loadAll)
               <button
                 v-for="category in categories"
                 :key="category"
-                @mousedown.prevent="selectedCategory = category; showSearchPanel = false"
+                @mousedown.prevent="chooseCategory(category)"
               >
                 {{ category }}
               </button>
@@ -993,10 +1934,19 @@ onMounted(loadAll)
           </div>
         </div>
 
-        <button class="header-action cart-button" @click="cartOpen = true">
+        <button class="header-action cart-button" @click="openPage('cart')">
           🛒 Giỏ hàng
           <b v-if="cartTotalQuantity > 0">{{ cartTotalQuantity }}</b>
         </button>
+
+        <div v-if="staffUser" class="user-actions">
+          <button class="header-action" @click="openPage('orders')">
+            🛠️ {{ staffUser.username }} ({{ staffUser.role }})
+          </button>
+          <button class="header-action logout-button" @click="logoutStaff">
+            Thoát NV
+          </button>
+        </div>
 
         <button v-if="!currentUser" class="header-action login-button" @click="openAuth('login')">
           Đăng nhập 👤
@@ -1017,26 +1967,14 @@ onMounted(loadAll)
           🏠 Trang chủ
         </button>
 
-        <button :class="{ active: isActive('shop') && selectedCategory !== 'Tất cả' }" @click="openPage('shop')">
-          🗂️ Danh mục
-        </button>
-
-        <button @click="cartOpen = true">
-          🛒 Giỏ hàng
-          <b v-if="cartTotalQuantity > 0">{{ cartTotalQuantity }}</b>
-        </button>
-
         <button :class="{ active: isActive('myOrders') }" @click="openPage('myOrders')">
           📦 Đơn mua
         </button>
 
-        <button @click="currentUser ? openPage('myOrders') : openAuth('login')">
+        <button :class="{ active: isActive('myOrders') }" @click="openPage('myOrders')">
           🔎 Tra cứu đơn
         </button>
 
-        <button @click="currentUser ? openPage('myOrders') : openAuth('login')">
-          👤 Tài khoản
-        </button>
       </nav>
     </header>
 
@@ -1044,119 +1982,312 @@ onMounted(loadAll)
     <main v-if="activePage === 'shop'" class="page shop-page">
       <section class="home-layout">
         <aside class="category-list">
+          <div class="side-title">
+            <span>Danh mục</span>
+            <b>{{ products.length }}</b>
+          </div>
+
           <button
             v-for="category in categories"
             :key="category"
             :class="{ active: selectedCategory === category }"
-            @click="selectedCategory = category"
+            @click="chooseCategory(category)"
           >
-            <span>{{ category === 'Tất cả' ? '🏷️' : category === 'Gia dụng' ? '🏠' : category === 'Điện tử' ? '💻' : category === 'Thực phẩm' ? '🥫' : category === 'Thời trang' ? '👕' : '📦' }}</span>
+            <span class="category-icon">{{ categoryIcon(category) }}</span>
             <b>{{ category }}</b>
-            <em>›</em>
+            <em>{{ categoryCounts[category] || 0 }}</em>
           </button>
         </aside>
 
         <section class="hero-banner">
-          <div class="hero-tabs">
-            <span>ORDER & SALES</span>
-            <span>CHECKOUT</span>
-            <span>ORDERDB</span>
-          </div>
-
           <div class="hero-content">
-            <p class="tag">NHÓM 2 — TRANG BÁN HÀNG MINI</p>
-            <h1>Chọn sản phẩm, tạo giỏ hàng và đặt đơn ngay</h1>
-            <p>
-              Sản phẩm lấy từ ProductStockCaches/Nhóm 1. Khi khách tạo đơn, dữ liệu được lưu vào OrderDB và phát sinh event order.created.
-            </p>
+            <p class="tag">RetailERP Market</p>
+            <h1>Đặt hàng nhanh từ dữ liệu kho Nhóm 1</h1>
+            <p>Danh mục luôn đồng bộ tồn kho, giỏ hàng kiểm tra số lượng và đơn bán được gửi sang hệ thống báo cáo sau khi đặt thành công.</p>
 
             <div class="hero-actions">
-              <button @click="cartOpen = true">Xem giỏ hàng</button>
-              <button class="ghost-btn" @click="openPage('integration')">Xem đồng bộ</button>
+              <button @click="scrollToCatalog">Mua ngay</button>
+              <button class="ghost-btn" @click="openPage('myOrders')">Tra cứu đơn</button>
+            </div>
+
+            <div class="hero-stats">
+              <span><b>{{ products.length }}</b> sản phẩm</span>
+              <span><b>{{ inStockProductCount }}</b> còn hàng</span>
+              <span><b>{{ lowStockProductCount }}</b> sắp hết</span>
             </div>
           </div>
+
         </section>
-
-        <aside class="member-card">
-          <h3>👋 Tài khoản khách hàng</h3>
-
-          <template v-if="!currentUser">
-            <p>Đăng nhập hoặc đăng ký để đặt hàng và xem lịch sử đơn.</p>
-            <button @click="openAuth('login')">Đăng nhập</button>
-            <button class="ghost-btn" @click="openAuth('register')">Đăng ký</button>
-          </template>
-
-          <template v-else>
-            <p><b>{{ currentUser.fullName }}</b></p>
-            <p>{{ currentUser.phone }}</p>
-            <button @click="openPage('myOrders')">Đơn của tôi</button>
-          </template>
-
-          <div class="mini-service">
-            <span>📦 {{ products.length }} sản phẩm</span>
-            <span>🧾 {{ orders.length }} đơn hàng</span>
-            <span>💰 {{ formatMoney(totalDebt) }} công nợ</span>
-          </div>
-
-          <div class="admin-shortcuts">
-            <p>Quản trị Nhóm 2</p>
-            <button @click="openPage('orders')">Quản lý đơn</button>
-            <button @click="openPage('customers')">Khách hàng</button>
-            <button @click="openPage('suppliers')">Nhà cung cấp</button>
-            <button @click="openPage('payments')">Thanh toán</button>
-            <button @click="openPage('debts')">Công nợ</button>
-            <button @click="openPage('integration')">Đồng bộ</button>
-          </div>
-        </aside>
       </section>
 
-      <section class="promo-strip">
-        <div>
-          <b>Sales Checkout</b>
-          <span>Tính tổng tiền, chiết khấu, thanh toán, công nợ</span>
+      <section class="market-showcase">
+        <div class="showcase-tabs">
+          <button
+            v-for="tab in showcaseTabs"
+            :key="tab.id"
+            type="button"
+            :class="{ active: activeShowcaseTab === tab.id }"
+            @click="activeShowcaseTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
         </div>
-        <div>
-          <b>stock.updated</b>
-          <span>Nhận tồn kho từ Nhóm 1</span>
+
+        <div class="showcase-categories">
+          <button
+            v-for="category in showcaseCategories"
+            :key="category"
+            type="button"
+            :class="{ active: showcaseCategory === category }"
+            @click="showcaseCategory = category"
+          >
+            {{ categoryIcon(category) }} {{ category }}
+          </button>
         </div>
-        <div>
-          <b>order.created</b>
-          <span>Gửi đơn hàng sang Nhóm 3</span>
+
+        <div v-if="activeShowcaseProducts.length === 0" class="showcase-empty">
+          Chưa có sản phẩm phù hợp trong mục này.
+        </div>
+
+        <div v-else class="showcase-grid">
+          <article v-for="product in activeShowcaseProducts" :key="productId(product)" class="showcase-card">
+            <div class="showcase-image" :class="productTone(product)">
+              <span class="showcase-badge">{{ showcaseProductBadge(product) }}</span>
+              <span class="product-visual">{{ productVisual(product) }}</span>
+            </div>
+
+            <p>{{ productCategory(product) }}</p>
+            <h3>{{ productName(product) }}</h3>
+            <strong>{{ formatMoney(productPrice(product)) }}</strong>
+            <span :class="['showcase-stock', productStockClass(product)]">
+              {{ productStockLabel(product) }} · còn {{ productStock(product) }}
+            </span>
+            <button :disabled="productStock(product) <= 0" @click="addToCart(product)">
+              {{ cartQuantityFor(product) ? 'Thêm nữa' : 'Thêm vào giỏ' }}
+            </button>
+          </article>
         </div>
       </section>
 
-      <section class="section-head">
+      <section id="product-catalog" class="section-head catalog-head">
         <div>
           <h2>Sản phẩm đang bán</h2>
-          <p>Đang lọc: <b>{{ selectedCategory }}</b> · Tìm thấy {{ filteredProducts.length }} sản phẩm</p>
+          <p>
+            {{ selectedCategory ? `Đang xem danh mục: ${selectedCategory}` : 'Hiển thị toàn bộ sản phẩm theo danh mục' }}
+            · Tìm thấy {{ filteredProducts.length }} sản phẩm
+          </p>
         </div>
 
-        <button class="outline-btn" @click="loadAll">
-          Làm mới dữ liệu
-        </button>
+        <div class="catalog-tools">
+          <select v-model="productSort" aria-label="Sắp xếp sản phẩm">
+            <option value="featured">Nổi bật</option>
+            <option value="priceAsc">Giá thấp đến cao</option>
+            <option value="priceDesc">Giá cao đến thấp</option>
+            <option value="stockDesc">Tồn kho nhiều nhất</option>
+          </select>
+
+          <button class="outline-btn" @click="loadAll">
+            Làm mới dữ liệu
+          </button>
+        </div>
       </section>
 
-      <section class="product-grid">
-        <article v-for="product in filteredProducts" :key="productId(product)" class="product-card">
-          <div class="product-image">{{ product.image || '📦' }}</div>
+      <div v-if="catalogCategorySections.length === 0" class="cart-empty-state page-empty">
+        <div class="empty-icon">🔎</div>
+        <h3>Không tìm thấy sản phẩm</h3>
+        <p>Thử đổi từ khóa tìm kiếm hoặc làm mới dữ liệu tồn kho.</p>
+        <button @click="clearSearchText">Xem lại tất cả sản phẩm</button>
+      </div>
 
-          <div class="product-meta">
-            <span>{{ productCategory(product) }}</span>
-            <span>{{ productCode(product) }}</span>
+      <section
+        v-for="section in catalogCategorySections"
+        :id="categorySectionId(section.category)"
+        :key="section.category"
+        class="category-product-section"
+      >
+        <div class="section-head category-product-head">
+          <div>
+            <h2>{{ categoryIcon(section.category) }} {{ section.category }}</h2>
+            <p>{{ section.products.length }} sản phẩm trong danh mục này</p>
+          </div>
+        </div>
+
+        <div class="product-grid">
+          <article v-for="product in section.products" :key="productId(product)" class="product-card">
+            <div class="product-image" :class="productTone(product)">
+              <span :class="['product-badge', productStockClass(product)]">{{ productStockLabel(product) }}</span>
+              <span class="product-visual">{{ productVisual(product) }}</span>
+            </div>
+
+            <div class="product-meta">
+              <span>{{ categoryIcon(productCategory(product)) }} {{ productCategory(product) }}</span>
+              <span>{{ productCode(product) }}</span>
+            </div>
+
+            <h3>{{ productName(product) }}</h3>
+
+            <div class="price-row">
+              <p class="price">{{ formatMoney(productPrice(product)) }}</p>
+              <span v-if="cartQuantityFor(product)" class="cart-chip">Đã chọn {{ cartQuantityFor(product) }}</span>
+            </div>
+
+            <div class="stock-meter">
+              <span :style="{ width: productStockPercent(product) + '%' }"></span>
+            </div>
+
+            <p class="stock" :class="productStock(product) > 0 ? 'in-stock' : 'out-stock'">
+              {{ productStock(product) > 0 ? `Còn ${productStock(product)} sản phẩm có thể thêm` : 'Hết hàng hoặc đã chọn hết trong giỏ' }}
+            </p>
+
+            <button :disabled="productStock(product) <= 0" @click="addToCart(product)">
+              {{ cartQuantityFor(product) ? 'Thêm nữa' : '+ Thêm vào giỏ' }}
+            </button>
+          </article>
+        </div>
+      </section>
+
+      <div v-if="cartTotalQuantity > 0" class="floating-cart-summary">
+        <div>
+          <b>{{ cartTotalQuantity }} sản phẩm</b>
+          <span>{{ formatMoney(cartTotal) }}</span>
+        </div>
+        <button @click="openPage('cart')">Xem giỏ</button>
+      </div>
+    </main>
+
+    <!-- CART PAGE -->
+    <main v-if="activePage === 'cart'" class="page">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Giỏ hàng</h2>
+            <p>Trang giỏ hàng dành cho khách hàng đặt mua online.</p>
+          </div>
+          <button class="outline-btn" @click="openPage('shop')">Tiếp tục mua hàng</button>
+        </div>
+
+        <div v-if="cart.length === 0" class="cart-empty-state page-empty">
+          <div class="empty-icon">🛒</div>
+          <h3>Giỏ hàng đang trống</h3>
+          <p>Hãy chọn sản phẩm từ trang bán hàng để bắt đầu đặt hàng.</p>
+          <button @click="openPage('shop')">Về trang chủ</button>
+        </div>
+
+        <template v-else>
+          <div class="cart-list page-cart-list">
+            <div v-for="item in cart" :key="item.productId" class="cart-item">
+              <div class="cart-icon">{{ item.image }}</div>
+              <div class="cart-info">
+                <div class="cart-row-head">
+                  <h4>{{ item.productName }}</h4>
+                  <button class="remove-link" @click="removeFromCart(item.productId)">Xóa</button>
+                </div>
+                <p class="cart-code">
+                  {{ item.productCode }} · Đang chọn {{ item.quantity }} · Còn có thể thêm {{ cartRemainingForItem(item) }}
+                </p>
+                <div class="cart-row-bottom">
+                  <b>{{ formatMoney(item.unitPrice) }}</b>
+                  <div class="quantity-control">
+                    <button @click="updateQuantity(item, item.quantity - 1)">−</button>
+                    <input :value="item.quantity" type="number" min="1" :max="cartStockLimit(item)" @input="updateQuantity(item, $event.target.value)" />
+                    <button @click="updateQuantity(item, item.quantity + 1)">+</button>
+                  </div>
+                </div>
+                <div class="item-total">Thành tiền: <b>{{ formatMoney(item.unitPrice * item.quantity) }}</b></div>
+              </div>
+            </div>
           </div>
 
-          <h3>{{ productName(product) }}</h3>
+          <div class="checkout-box customer-checkout page-checkout">
+            <h3>Thông tin đặt hàng</h3>
 
-          <p class="price">{{ formatMoney(productPrice(product)) }}</p>
+            <div class="checkout-field">
+              <label>Phương thức thanh toán</label>
+              <select v-model="checkout.paymentMethod">
+                <option value="Cash">Tiền mặt khi nhận hàng</option>
+                <option value="BankTransfer">Chuyển khoản</option>
+                <option value="EWallet">Ví điện tử</option>
+                <option value="QR">Thanh toán QR</option>
+              </select>
+            </div>
 
-          <p class="stock" :class="productStock(product) > 0 ? 'in-stock' : 'out-stock'">
-            {{ productStock(product) > 0 ? `Còn ${productStock(product)} sản phẩm` : 'Hết hàng' }}
-          </p>
+            <div v-if="currentUser || staffUser" class="checkout-field">
+              <label>Chiết khấu (VNĐ)</label>
+              <input
+                v-model.number="checkout.discountAmount"
+                type="number"
+                min="0"
+                :max="cartTotal"
+                placeholder="0"
+                @input="syncCheckoutAmounts"
+              />
+              <button v-if="canManageSales" type="button" class="outline-btn small-top" @click="recalculateCheckout">
+                Tính tổng (Sales API)
+              </button>
+            </div>
 
-          <button :disabled="productStock(product) <= 0" @click="addToCart(product)">
-            + Thêm vào giỏ
-          </button>
-        </article>
+            <div v-if="currentUser" class="checkout-field">
+              <label>Số tiền thanh toán trước (VNĐ)</label>
+              <input
+                v-model.number="checkout.paidAmount"
+                type="number"
+                min="0"
+                :max="finalAmount"
+                :placeholder="String(finalAmount)"
+                @input="syncCheckoutAmounts"
+              />
+              <p v-if="debtAmount > 0" class="checkout-note debt-hint">
+                Còn nợ sau đơn: <b>{{ formatMoney(debtAmount) }}</b> · hạn dự kiến {{ formatDate(expectedDebtDueDate) }}
+              </p>
+            </div>
+
+            <div v-if="currentUser" class="shipping-form">
+              <label>Họ tên người nhận</label>
+              <input v-model="checkoutShipping.fullName" type="text" placeholder="Nhập họ tên" />
+              <label>Số điện thoại</label>
+              <input v-model="checkoutShipping.phone" type="text" placeholder="Nhập số điện thoại" />
+              <label>Địa chỉ nhận hàng</label>
+              <textarea v-model="checkoutShipping.address" rows="3" placeholder="Nhập địa chỉ nhận hàng"></textarea>
+            </div>
+
+            <div v-else class="checkout-note">
+              Vui lòng đăng nhập hoặc đăng ký trước khi đặt hàng.
+            </div>
+
+            <div class="checkout-total-box">
+              <div class="money-line"><span>Tổng tiền hàng</span><b>{{ formatMoney(cartTotal) }}</b></div>
+              <div class="money-line"><span>Chiết khấu</span><b>- {{ formatMoney(checkout.discountAmount || 0) }}</b></div>
+              <div class="money-line"><span>Thanh toán trước</span><b>{{ formatMoney(Number(checkout.paidAmount ?? finalAmount)) }}</b></div>
+              <div v-if="debtAmount > 0" class="money-line"><span>Công nợ đơn này</span><b>{{ formatMoney(debtAmount) }}</b></div>
+              <div class="money-line final"><span>Tổng cần thanh toán</span><b>{{ formatMoney(finalAmount) }}</b></div>
+            </div>
+
+            <button class="checkout-btn" @click="currentUser ? prepareCheckoutConfirmation() : openAuth('login')">
+              {{ currentUser ? 'Đặt hàng' : 'Đăng nhập để đặt hàng' }}
+            </button>
+          </div>
+        </template>
+      </section>
+    </main>
+
+    <!-- ACCOUNT PAGE -->
+    <main v-if="activePage === 'account'" class="page">
+      <section class="panel">
+        <h2>Tài khoản khách hàng</h2>
+        <p v-if="!currentUser">Bạn cần đăng nhập để xem và cập nhật tài khoản.</p>
+
+        <div v-else class="form-grid one account-form">
+          <label>Họ tên</label>
+          <input v-model="accountForm.fullName" type="text" />
+          <label>Số điện thoại</label>
+          <input v-model="accountForm.phone" type="text" disabled />
+          <label>Email</label>
+          <input v-model="accountForm.email" type="email" />
+          <label>Địa chỉ nhận hàng</label>
+          <textarea v-model="accountForm.address" rows="3"></textarea>
+          <p v-if="accountSaveMessage" class="success-text">{{ accountSaveMessage }}</p>
+          <button class="checkout-btn" @click="saveAccountProfile">Lưu thông tin</button>
+        </div>
       </section>
     </main>
 
@@ -1166,7 +2297,23 @@ onMounted(loadAll)
         <h2>Đơn hàng của tôi</h2>
         <p v-if="!currentUser">Bạn cần đăng nhập để xem đơn hàng của mình.</p>
 
-        <table v-else>
+        <div v-else class="lookup-box">
+          <label>Tra cứu đơn theo mã</label>
+          <div class="lookup-row">
+            <input v-model="orderLookupCode" type="text" placeholder="Nhập mã đơn, ví dụ ORD000001" />
+            <button class="primary-btn" @click="lookupOrderByCode">Tra cứu</button>
+          </div>
+          <p v-if="orderLookupError" class="error-text">{{ orderLookupError }}</p>
+        </div>
+
+        <div v-if="currentUser && myOrders.length === 0" class="cart-empty-state page-empty">
+          <div class="empty-icon">📦</div>
+          <h3>Bạn chưa có đơn hàng nào</h3>
+          <p>Hãy chọn sản phẩm và đặt hàng để xem lịch sử mua tại đây.</p>
+          <button @click="openPage('shop')">Mua sắm ngay</button>
+        </div>
+
+        <table v-else-if="currentUser">
           <thead>
             <tr>
               <th>Mã đơn</th>
@@ -1174,20 +2321,26 @@ onMounted(loadAll)
               <th>Thành tiền</th>
               <th>Đã trả</th>
               <th>Còn nợ</th>
-              <th>Trạng thái</th>
+              <th>Trạng thái đơn</th>
+              <th>Thanh toán</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="order in myOrders" :key="order.id || order.orderId">
+            <tr v-for="order in myOrders" :key="order.id || order.orderId" class="clickable-row" @click="openOrderDetail(order)">
               <td>{{ order.orderCode || 'ORD' + (order.id || order.orderId) }}</td>
               <td>{{ order.orderDate ? new Date(order.orderDate).toLocaleString('vi-VN') : '' }}</td>
-              <td>{{ formatMoney(order.finalAmount || order.totalAmount) }}</td>
-              <td>{{ formatMoney(order.paidAmount) }}</td>
-              <td>{{ formatMoney(order.debtAmount) }}</td>
+              <td>{{ formatMoney(orderTotalAmount(order)) }}</td>
+              <td>{{ formatMoney(orderPaidAmount(order)) }}</td>
+              <td>{{ formatMoney(orderDebtAmount(order)) }}</td>
               <td>
-                <span :class="statusClass(order.orderStatus || order.paymentStatus || order.status)">
-                  {{ statusLabel(order.orderStatus || order.paymentStatus || order.status) }}
+                <span :class="statusClass(order.orderStatus || order.status)">
+                  {{ statusLabel(order.orderStatus || order.status) }}
+                </span>
+              </td>
+              <td>
+                <span :class="paymentStatusClass(order)">
+                  {{ paymentStatusText(order) }}
                 </span>
               </td>
             </tr>
@@ -1232,13 +2385,13 @@ onMounted(loadAll)
           </thead>
 
           <tbody>
-            <tr v-for="order in orders" :key="order.id || order.orderId">
+            <tr v-for="order in orders" :key="order.id || order.orderId" class="clickable-row" @click="openOrderDetail(order)">
               <td>{{ order.orderCode || 'ORD' + (order.id || order.orderId) }}</td>
               <td>{{ order.customer?.name || order.customerName || 'ID: ' + order.customerId }}</td>
               <td>{{ order.orderDate ? new Date(order.orderDate).toLocaleString('vi-VN') : '' }}</td>
-              <td>{{ formatMoney(order.finalAmount || order.totalAmount) }}</td>
-              <td>{{ formatMoney(order.paidAmount) }}</td>
-              <td>{{ formatMoney(order.debtAmount) }}</td>
+              <td>{{ formatMoney(orderTotalAmount(order)) }}</td>
+              <td>{{ formatMoney(orderPaidAmount(order)) }}</td>
+              <td>{{ formatMoney(orderDebtAmount(order)) }}</td>
               <td>
                 <span :class="statusClass(order.orderStatus || order.paymentStatus || order.status)">
                   {{ statusLabel(order.orderStatus || order.paymentStatus || order.status) }}
@@ -1370,7 +2523,7 @@ onMounted(loadAll)
               <td>{{ payment.paymentDate ? new Date(payment.paymentDate).toLocaleString('vi-VN') : '' }}</td>
               <td>
                 <span :class="statusClass(payment.paymentStatus)">
-                  {{ payment.paymentStatus || 'Paid' }}
+                  {{ statusLabel(payment.paymentStatus || 'Paid') }}
                 </span>
               </td>
             </tr>
@@ -1393,6 +2546,7 @@ onMounted(loadAll)
               <th>Số tiền nợ</th>
               <th>Đã trả</th>
               <th>Còn lại</th>
+              <th>Hạn thanh toán</th>
               <th>Trạng thái</th>
               <th>Thao tác</th>
             </tr>
@@ -1406,14 +2560,148 @@ onMounted(loadAll)
               <td>{{ formatMoney(debt.debtAmount) }}</td>
               <td>{{ formatMoney(debt.paidAmount) }}</td>
               <td>{{ formatMoney(debt.remainingAmount || debt.debtAmount) }}</td>
+              <td>{{ debt.dueDate ? formatDate(debt.dueDate) : 'Chưa đặt' }}</td>
               <td>
                 <span :class="statusClass(debt.debtStatus)">
-                  {{ debt.debtStatus || 'Unpaid' }}
+                  {{ statusLabel(debt.debtStatus || 'Unpaid') }}
                 </span>
               </td>
               <td>
                 <button class="small-btn" @click="openDebtModal(debt)">
                   Trả nợ
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <!-- ORDER DETAIL -->
+    <main v-if="activePage === 'orderDetail'" class="page">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Chi tiết đơn hàng</h2>
+            <p v-if="selectedOrder">
+              Mã đơn: <b>{{ selectedOrder.orderCode || ('ORD' + (selectedOrder.orderId || selectedOrder.id)) }}</b>
+            </p>
+          </div>
+          <button class="outline-btn" @click="openPage(currentUser ? 'myOrders' : (staffUser ? 'orders' : 'shop'))">
+            Quay lại
+          </button>
+        </div>
+
+        <p v-if="orderDetailLoading">Đang tải chi tiết đơn...</p>
+
+        <template v-else-if="selectedOrder">
+          <div class="order-detail-grid">
+            <div>
+              <span>Khách hàng</span>
+              <b>{{ selectedOrder.customerName || ('ID: ' + selectedOrder.customerId) }}</b>
+            </div>
+            <div>
+              <span>Ngày tạo</span>
+              <b>{{ selectedOrder.orderDate ? new Date(selectedOrder.orderDate).toLocaleString('vi-VN') : '' }}</b>
+            </div>
+            <div>
+              <span>Trạng thái đơn</span>
+              <b>{{ statusLabel(selectedOrder.orderStatus || selectedOrder.status) }}</b>
+            </div>
+            <div>
+              <span>Trạng thái thanh toán</span>
+              <b :class="['detail-status', paymentStatusClass(selectedOrder)]">{{ paymentStatusText(selectedOrder) }}</b>
+            </div>
+            <div>
+              <span>Phương thức thanh toán</span>
+              <b>{{ paymentMethodLabel(selectedOrder.paymentMethod) }}</b>
+            </div>
+            <div>
+              <span>Tổng tiền</span>
+              <b>{{ formatMoney(orderTotalAmount(selectedOrder)) }}</b>
+            </div>
+            <div>
+              <span>Đã thanh toán</span>
+              <b>{{ formatMoney(orderPaidAmount(selectedOrder)) }}</b>
+            </div>
+            <div>
+              <span>Còn phải trả</span>
+              <b>{{ formatMoney(orderDebtAmount(selectedOrder)) }}</b>
+            </div>
+          </div>
+
+          <div v-if="canViewWarehouse && String(selectedOrder.orderStatus || selectedOrder.status).toLowerCase() === 'pending'" class="order-detail-actions">
+            <button class="checkout-btn" @click="updateOrderStatus(selectedOrder, 'Confirmed')">
+              Xác nhận xuất kho
+            </button>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Mã SP</th>
+                <th>Tên sản phẩm</th>
+                <th>Số lượng</th>
+                <th>Đơn giá</th>
+                <th>Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in (selectedOrder.items || [])" :key="item.orderDetailId || item.productId">
+                <td>{{ item.productCode }}</td>
+                <td>{{ item.productName }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>{{ formatMoney(item.unitPrice) }}</td>
+                <td>{{ formatMoney(item.subTotal || (item.unitPrice * item.quantity)) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+      </section>
+    </main>
+
+    <!-- WAREHOUSE -->
+    <main v-if="activePage === 'warehouse'" class="page">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Kho xuất hàng</h2>
+            <p>Đối chiếu đơn hàng cần xuất và số lượng sản phẩm trong từng đơn.</p>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Mã đơn</th>
+              <th>Khách hàng</th>
+              <th>Trạng thái</th>
+              <th>Sản phẩm cần xuất</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="order in warehouseOrders" :key="order.orderId || order.id">
+              <td>{{ order.orderCode || 'ORD' + (order.orderId || order.id) }}</td>
+              <td>{{ order.customerName || order.customerId }}</td>
+              <td>
+                <span :class="statusClass(order.orderStatus || order.paymentStatus || order.status)">
+                  {{ statusLabel(order.orderStatus || order.paymentStatus || order.status) }}
+                </span>
+              </td>
+              <td>
+                <div v-for="item in (order.items || [])" :key="item.orderDetailId || item.productId" class="warehouse-item">
+                  {{ item.productName }} × {{ item.quantity }}
+                </div>
+              </td>
+              <td class="warehouse-actions">
+                <button class="small-btn" @click="openOrderDetail(order)">Đối chiếu</button>
+                <button
+                  v-if="canViewWarehouse && String(order.orderStatus || order.status).toLowerCase() === 'pending'"
+                  class="small-btn primary"
+                  @click="updateOrderStatus(order, 'Confirmed')"
+                >
+                  Xác nhận xuất
                 </button>
               </td>
             </tr>
@@ -1439,6 +2727,21 @@ onMounted(loadAll)
           <span>Outbox Messages</span>
           <b>{{ outboxMessages.length }}</b>
         </div>
+
+        <div class="stat-card">
+          <span>Pending retry</span>
+          <b>{{ pendingOutboxCount }}</b>
+        </div>
+
+        <div class="stat-card">
+          <span>Đã gửi Nhóm 3</span>
+          <b>{{ processedOutboxCount }}</b>
+        </div>
+
+        <div class="stat-card">
+          <span>Gửi lỗi</span>
+          <b>{{ failedOutboxCount }}</b>
+        </div>
       </section>
 
       <section class="panel">
@@ -1446,6 +2749,7 @@ onMounted(loadAll)
         <p>
           Trang này mô phỏng Nhóm 2 nhận stock.updated từ Nhóm 1 và phát order.created sang Nhóm 3.
         </p>
+        <button class="outline-btn sync-refresh" @click="loadAll">Làm mới trạng thái</button>
 
         <table>
           <thead>
@@ -1453,6 +2757,7 @@ onMounted(loadAll)
               <th>ID</th>
               <th>Event</th>
               <th>Trạng thái</th>
+              <th>Retry</th>
               <th>Ngày tạo</th>
             </tr>
           </thead>
@@ -1461,7 +2766,12 @@ onMounted(loadAll)
             <tr v-for="message in outboxMessages" :key="message.id || message.outboxMessageId">
               <td>{{ message.id || message.outboxMessageId }}</td>
               <td>{{ message.eventName }}</td>
-              <td>{{ message.status }}</td>
+              <td>
+                <span :class="statusClass(message.status)">
+                  {{ message.status }}
+                </span>
+              </td>
+              <td>{{ message.retryCount || 0 }}/5</td>
               <td>{{ message.createdAt ? new Date(message.createdAt).toLocaleString('vi-VN') : '' }}</td>
             </tr>
           </tbody>
@@ -1505,7 +2815,9 @@ onMounted(loadAll)
                   </button>
                 </div>
 
-                <p class="cart-code">{{ item.productCode }} · Còn {{ item.stock }} sản phẩm</p>
+                <p class="cart-code">
+                  {{ item.productCode }} · Đang chọn {{ item.quantity }} · Còn có thể thêm {{ cartRemainingForItem(item) }}
+                </p>
 
                 <div class="cart-row-bottom">
                   <b>{{ formatMoney(item.unitPrice) }}</b>
@@ -1516,7 +2828,7 @@ onMounted(loadAll)
                       :value="item.quantity"
                       type="number"
                       min="1"
-                      :max="item.stock"
+                      :max="cartStockLimit(item)"
                       @input="updateQuantity(item, $event.target.value)"
                     />
                     <button @click="updateQuantity(item, item.quantity + 1)">+</button>
@@ -1563,13 +2875,17 @@ onMounted(loadAll)
               </div>
             </div>
 
-            <div v-if="currentUser" class="customer-order-info">
+            <div v-if="currentUser" class="shipping-form drawer-shipping">
               <b>Thông tin nhận hàng</b>
-              <span>{{ currentUser.fullName }} · {{ currentUser.phone }}</span>
-              <small>{{ currentUser.address || 'Chưa có địa chỉ' }}</small>
+              <label>Họ tên</label>
+              <input v-model="checkoutShipping.fullName" type="text" />
+              <label>Số điện thoại</label>
+              <input v-model="checkoutShipping.phone" type="text" />
+              <label>Địa chỉ nhận hàng</label>
+              <textarea v-model="checkoutShipping.address" rows="2" placeholder="Nhập địa chỉ nhận hàng"></textarea>
             </div>
 
-            <button class="checkout-btn" @click="createOrder">
+            <button class="checkout-btn" @click="prepareCheckoutConfirmation">
               Đặt hàng
             </button>
 
@@ -1579,6 +2895,71 @@ onMounted(loadAll)
           </div>
         </template>
       </aside>
+    </div>
+
+    <!-- STAFF AUTH MODAL -->
+    <div v-if="showCheckoutConfirmModal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="drawer-head">
+          <h2>Xác nhận đơn hàng</h2>
+          <button class="close-btn" @click="closeCheckoutConfirmModal">✕</button>
+        </div>
+
+        <div class="confirm-layout">
+          <div class="confirm-summary">
+            <div class="money-line"><span>Số sản phẩm</span><b>{{ cartTotalQuantity }}</b></div>
+            <div class="money-line"><span>Tổng tiền hàng</span><b>{{ formatMoney(cartTotal) }}</b></div>
+            <div class="money-line"><span>Chiết khấu</span><b>- {{ formatMoney(checkout.discountAmount || 0) }}</b></div>
+            <div class="money-line paid"><span>Thanh toán trước</span><b>{{ formatMoney(Number(checkout.paidAmount ?? finalAmount)) }}</b></div>
+            <div v-if="debtAmount > 0" class="money-line debt"><span>Công nợ phát sinh</span><b>{{ formatMoney(debtAmount) }}</b></div>
+            <div class="money-line final"><span>Tổng đơn</span><b>{{ formatMoney(finalAmount) }}</b></div>
+          </div>
+
+          <div class="checkout-note">
+            <b>{{ checkoutShipping.fullName || currentUser?.fullName }}</b><br />
+            {{ checkoutShipping.phone || currentUser?.phone }}<br />
+            {{ checkoutShipping.address }}
+          </div>
+
+          <div v-if="debtAmount > 0" class="checkout-note debt-hint">
+            Đơn này sẽ tạo công nợ tự động, hạn thanh toán dự kiến {{ formatDate(expectedDebtDueDate) }}.
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="outline-btn" :disabled="checkoutSubmitting" @click="closeCheckoutConfirmModal">Kiểm tra lại</button>
+          <button class="checkout-btn" :disabled="checkoutSubmitting" @click="confirmCheckout">
+            {{ checkoutSubmitting ? 'Đang tạo đơn...' : 'Xác nhận đặt hàng' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showStaffAuthModal" class="modal-backdrop">
+      <div class="modal-card small-modal">
+        <div class="drawer-head">
+          <h2>Đăng nhập nhân viên</h2>
+          <button class="close-btn" @click="closeStaffAuth">✕</button>
+        </div>
+
+        <div class="form-grid one">
+          <label>Tên đăng nhập</label>
+          <input v-model="staffLoginForm.username" type="text" placeholder="sales01" />
+
+          <label>Vai trò</label>
+          <select v-model="staffLoginForm.role">
+            <option value="Sales">Sales</option>
+            <option value="Admin">Admin</option>
+            <option value="Warehouse">Warehouse</option>
+          </select>
+
+          <p v-if="staffAuthError" class="error-text">{{ staffAuthError }}</p>
+
+          <button class="checkout-btn" @click="loginStaff">
+            Đăng nhập nhân viên
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- AUTH MODAL -->
@@ -1593,8 +2974,8 @@ onMounted(loadAll)
           <label>Số điện thoại</label>
           <input v-model="loginForm.phone" type="text" placeholder="Nhập số điện thoại" />
 
-          <label>Mật khẩu</label>
-          <input v-model="loginForm.password" type="password" placeholder="Nhập mật khẩu demo" />
+          <label>Mật khẩu demo</label>
+          <input v-model="loginForm.password" type="password" placeholder="Nhập mật khẩu " />
 
           <p v-if="authError" class="error-text">{{ authError }}</p>
 
@@ -1622,7 +3003,8 @@ onMounted(loadAll)
           <input v-model="registerForm.address" type="text" placeholder="Nhập địa chỉ" />
 
           <label>Mật khẩu</label>
-          <input v-model="registerForm.password" type="password" placeholder="Nhập mật khẩu" />
+          <input v-model="registerForm.password" type="password" placeholder="Tạo mật khẩu" />
+          
 
           <p v-if="authError" class="error-text">{{ authError }}</p>
 
@@ -1716,6 +3098,11 @@ onMounted(loadAll)
           <button class="close-btn" @click="closeDebtModal">✕</button>
         </div>
 
+        <div v-if="selectedDebt" class="checkout-note debt-hint">
+          Còn phải thu: <b>{{ formatMoney(selectedDebt.remainingAmount || selectedDebt.debtAmount) }}</b>
+          <span v-if="selectedDebt.dueDate"> · hạn {{ formatDate(selectedDebt.dueDate) }}</span>
+        </div>
+
         <div class="form-grid one">
           <label>Số tiền khách trả</label>
           <input v-model.number="debtPayForm.amount" type="number" min="0" />
@@ -1734,6 +3121,121 @@ onMounted(loadAll)
         </div>
       </div>
     </div>
+
+    <section v-if="activePage === 'shop' && topManufacturers.length > 0" class="manufacturer-section footer-adjacent">
+      <h2>Đội ngũ các nhà sản xuất và đối tác hàng đầu</h2>
+      <div class="manufacturer-grid">
+        <article v-for="partner in topManufacturers" :key="partner.name" class="manufacturer-card">
+          <div class="manufacturer-logo">{{ partner.initials }}</div>
+          <h3>{{ partner.name }}</h3>
+          <p>{{ partner.primaryCategory }}</p>
+          <span>{{ partner.productCount }} dòng sản phẩm</span>
+        </article>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <section class="footer-column support-column">
+          <h3>Tổng đài hỗ trợ miễn phí</h3>
+          <p>Mua hàng - bảo hành <b>12345.6789</b> (7h30 - 22h00)</p>
+          <p>Khiếu nại <b>13578.3424</b> (8h00 - 21h30)</p>
+
+          <h3>Phương thức thanh toán</h3>
+          <div class="payment-icons">
+            <img class="payment-logo" src="/payments/apple-pay-og.png" alt="Apple Pay" />
+            <img class="payment-logo" src="/payments/vnpay-logo.webp" alt="VNPay" />
+            <img class="payment-logo" src="/payments/momo_1.webp" alt="Momo" />
+            <img class="payment-logo" src="/payments/onepay-logo.webp" alt="OnePay" />
+            <img class="payment-logo" src="/payments/mpos-logo.webp" alt="mPOS" />
+            <img class="payment-logo" src="/payments/zalopay-logo.webp" alt="ZaloPay" />
+            <img class="payment-logo" src="/payments/kredivo-logo.webp" alt="Kredivo" />
+            <img class="payment-logo" src="/payments/fundiin.webp" alt="Fundiin" />
+          </div>
+
+          <h3>Đăng ký nhận tin khuyến mại</h3>
+          <div class="subscribe-box">
+            <b>Nhận ngay voucher 10%</b>
+            <span>Voucher sử dụng trong 24h cho khách hàng mới.</span>
+          </div>
+          <input type="email" placeholder="Nhập email của bạn" />
+          <input type="text" placeholder="Nhập số điện thoại của bạn" />
+          <label class="footer-check">
+            <input type="checkbox" checked />
+            Tôi đồng ý với điều khoản của RetailERP
+          </label>
+          <button class="subscribe-btn">Đăng ký ngay</button>
+        </section>
+
+        <section class="footer-column">
+          <h3>Thông tin về chính sách</h3>
+          <a href="#">Mua hàng và thanh toán Online</a>
+          <a href="#">Mua hàng trả góp</a>
+          <a href="#">Chính sách giao hàng</a>
+          <a href="#">Chính sách đổi trả</a>
+          <a href="#">Tra cứu bảo hành</a>
+          <a href="#">Tra cứu hóa đơn điện tử</a>
+          <a href="#">Thông tin hóa đơn mua hàng</a>
+          <a href="#">Quy định bảo mật dữ liệu</a>
+        </section>
+
+        <section class="footer-column">
+          <h3>Dịch vụ và thông tin khác</h3>
+          <a href="#">Khách hàng doanh nghiệp</a>
+          <a href="#">Ưu đãi thanh toán</a>
+          <a href="#">Quy chế hoạt động</a>
+          <a href="#">Chính sách bảo mật thông tin cá nhân</a>
+          <a href="#">Chính sách bảo hành</a>
+          <a href="#">Liên hệ hợp tác kinh doanh</a>
+          <a href="#">Tuyển dụng</a>
+
+          <h3>Mua sắm dễ dàng trên ứng dụng</h3>
+          <div class="app-download">
+            <div class="qr-box">QR</div>
+            <div>
+              <img class="app-badge-image" src="/payments/downloadANDROID.webp" alt="Tải trên Google Play" />
+              <img class="app-badge-image" src="/payments/downloadiOS.webp" alt="Tải trên App Store" />
+            </div>
+          </div>
+        </section>
+
+        <section class="footer-column social-column">
+          <h3>Kết nối với RetailERP</h3>
+          <div class="social-links">
+            <a href="#" aria-label="YouTube">▶</a>
+            <a href="#" aria-label="Facebook">f</a>
+            <a href="#" aria-label="Instagram">◎</a>
+            <a href="#" aria-label="TikTok">♪</a>
+            <a href="#" aria-label="Zalo">Zalo</a>
+          </div>
+
+          <h3>Website thành viên</h3>
+          <p>Hệ thống bán hàng và quản lý đơn</p>
+          <b class="brand-badge">RetailERP Sale</b>
+          <p>Trung tâm hỗ trợ khách hàng</p>
+          <b class="brand-badge care">RetailCare</b>
+          <p>Kênh tin tức khuyến mại và công nghệ</p>
+          <b class="brand-badge news">RetailNews</b>
+
+        </section>
+      </div>
+
+      <div class="footer-tags">
+        <a href="#">Gia dụng</a>
+        <a href="#">Điện tử</a>
+        <a href="#">Thời trang</a>
+        <a href="#">Thực phẩm</a>
+        <a href="#">Văn phòng phẩm</a>
+        <a href="#">Trả góp</a>
+        <a href="#">Flash Sale</a>
+        <a href="#">Tra cứu đơn hàng</a>
+      </div>
+
+      <div class="footer-bottom">
+        <span>Công ty TNHH RetailERP Demo - Order & Sales Service Nhóm 2</span>
+        <span>Địa chỉ: Hà Nội, Việt Nam · Tổng đài: 1800.2044</span>
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -1744,7 +3246,7 @@ onMounted(loadAll)
 
 :global(body) {
   margin: 0;
-  background: #f4f7fb;
+  background: #f6f8fb;
   color: #172033;
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -1769,40 +3271,72 @@ button {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: linear-gradient(180deg, #3454d1, #243c9d);
-  color: white;
-  box-shadow: 0 8px 24px rgba(36, 60, 157, 0.25);
+  background: white;
+  color: #172033;
+  border-bottom: 1px solid #e7edf5;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
 .header-top {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #172033;
+  color: #e5edf7;
+  overflow: hidden;
 }
 
 .header-top-inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 7px 12px;
+  height: 34px;
   display: flex;
-  gap: 22px;
+  align-items: center;
   font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
-  overflow-x: auto;
+  overflow: hidden;
+}
+
+.promo-marquee {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  min-width: max-content;
+  animation: promo-marquee 28s linear infinite;
+}
+
+.promo-marquee span {
+  display: inline-flex;
+  align-items: center;
+  color: #f8fafc;
+}
+
+.header-top:hover .promo-marquee {
+  animation-play-state: paused;
+}
+
+@keyframes promo-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 .header-main {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 12px;
+  padding: 13px 12px 10px;
   display: grid;
-  grid-template-columns: auto auto auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .logo {
   border: none;
   background: transparent;
-  color: white;
+  color: #172033;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1816,34 +3350,37 @@ button {
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: white;
-  color: #3454d1;
+  background: #2f55d4;
+  color: white;
 }
 
 .header-action {
   min-height: 40px;
-  border: none;
+  border: 1px solid #e1e8f2;
   border-radius: 10px;
   padding: 0 12px;
-  background: rgba(255, 255, 255, 0.14);
-  color: white;
+  background: #f5f8fc;
+  color: #26324a;
   font-weight: 800;
   white-space: nowrap;
 }
 
 .header-action:hover {
-  background: rgba(255, 255, 255, 0.23);
+  background: #eef4ff;
+  border-color: #cfe0ff;
 }
 
 .search-box {
-  height: 42px;
+  height: 46px;
   display: flex;
   align-items: center;
   gap: 8px;
   background: white;
   color: #172033;
+  border: 2px solid #2f55d4;
   border-radius: 12px;
-  padding: 0 12px;
+  padding: 0 14px;
+  box-shadow: 0 8px 20px rgba(47, 85, 212, .10);
 }
 
 .search-box input {
@@ -2016,12 +3553,15 @@ button {
 
 .cart-button {
   position: relative;
+  background: #172033;
+  border-color: #172033;
+  color: white;
 }
 
 .cart-button b {
   margin-left: 6px;
-  background: white;
-  color: #3454d1;
+  background: #ffba49;
+  color: #172033;
   padding: 2px 7px;
   border-radius: 999px;
 }
@@ -2031,21 +3571,28 @@ button {
   gap: 8px;
 }
 
+.logout-button {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
 .quick-nav {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 12px 14px;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(120px, 1fr));
-  gap: 10px;
+  padding: 0 12px 12px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
 }
 
 .quick-nav button {
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 14px;
-  padding: 11px 10px;
-  color: white;
-  background: rgba(255, 255, 255, 0.12);
+  min-height: 38px;
+  border: 1px solid #e1e8f2;
+  border-radius: 999px;
+  padding: 0 16px;
+  color: #475569;
+  background: white;
   font-weight: 850;
   white-space: nowrap;
   display: flex;
@@ -2066,15 +3613,15 @@ button {
 }
 
 .quick-nav button:hover {
-  background: rgba(255, 255, 255, 0.22);
-  transform: translateY(-1px);
+  background: #f5f8fc;
+  color: #172033;
 }
 
 .quick-nav button.active {
-  background: white;
-  color: #243c9d;
-  border-color: white;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  background: #edf4ff;
+  color: #1f3d99;
+  border-color: #cfe0ff;
+  box-shadow: none;
 }
 
 /* PAGE */
@@ -2086,8 +3633,8 @@ button {
 
 .home-layout {
   display: grid;
-  grid-template-columns: 230px 1fr 250px;
-  gap: 14px;
+  grid-template-columns: 230px 1fr;
+  gap: 16px;
 }
 
 .category-list,
@@ -2095,88 +3642,121 @@ button {
 .member-card,
 .panel,
 .product-card,
-.stat-card,
-.promo-strip {
+.stat-card {
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(23, 32, 51, 0.08);
 }
 
 .category-list {
-  padding: 8px;
+  padding: 12px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.side-title {
+  padding: 4px 4px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #172033;
+  font-weight: 900;
+}
+
+.side-title b {
+  min-width: 28px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #e8f7ef;
+  color: #087647;
+  font-size: 12px;
 }
 
 .category-list button {
   width: 100%;
-  min-height: 40px;
-  border: none;
+  min-height: 46px;
+  border: 1px solid transparent;
   border-radius: 10px;
-  padding: 0 10px;
+  padding: 0 11px;
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 34px 1fr auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: transparent;
   color: #26324a;
   text-align: left;
+  font-weight: 850;
 }
 
 .category-list button:hover,
 .category-list button.active {
-  background: #eef2ff;
-  color: #243c9d;
+  background: #f0f7ff;
+  border-color: #d8e6ff;
+  color: #1f3d99;
+}
+
+.category-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #f6f8fb;
 }
 
 .category-list em {
+  min-width: 24px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
   font-style: normal;
-  color: #9aa3b2;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
 }
 
 .hero-banner {
-  min-height: 310px;
+  min-height: 320px;
   overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+  padding: 28px;
   background:
-    radial-gradient(circle at 82% 25%, rgba(99, 102, 241, .20), transparent 30%),
-    linear-gradient(135deg, #f8fbff, #eef2ff);
-}
-
-.hero-tabs {
-  height: 45px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: #f4f7ff;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 800;
-  text-align: center;
-}
-
-.hero-tabs span {
-  display: grid;
-  place-items: center;
-  border-right: 1px solid #e5e7eb;
+    radial-gradient(circle at 78% 18%, rgba(255, 186, 73, .34), transparent 24%),
+    linear-gradient(135deg, #ffffff 0%, #edf6ff 55%, #e9f7ef 100%);
 }
 
 .hero-content {
-  padding: 34px;
+  padding: 4px 0;
+  align-self: center;
 }
 
 .hero-content .tag {
-  color: #3454d1;
+  width: fit-content;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #b45309;
   font-weight: 900;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
+  font-size: 12px;
 }
 
 .hero-content h1 {
   max-width: 600px;
   margin: 0;
-  font-size: 38px;
-  line-height: 1.12;
+  font-size: 36px;
+  line-height: 1.08;
   color: #172033;
 }
 
 .hero-content p {
-  max-width: 660px;
+  max-width: 620px;
   color: #5b6475;
   line-height: 1.6;
 }
@@ -2195,14 +3775,38 @@ button {
   border: none;
   border-radius: 10px;
   padding: 11px 14px;
-  background: #3454d1;
+  background: #2f55d4;
   color: white;
   font-weight: 900;
 }
 
 .ghost-btn {
-  background: #eef2ff !important;
-  color: #243c9d !important;
+  background: white !important;
+  color: #1f3d99 !important;
+  border: 1px solid #dbe6ff !important;
+}
+
+.hero-stats {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hero-stats span {
+  min-width: 112px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .74);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hero-stats b {
+  display: block;
+  color: #172033;
+  font-size: 20px;
 }
 
 .member-card {
@@ -2271,30 +3875,158 @@ button {
   background: #eef2ff;
 }
 
-.promo-strip {
-  margin: 14px 0;
-  padding: 12px;
+.market-showcase {
+  margin: 16px 0 24px;
+  padding: 0 14px 16px;
+  border: 2px solid #5b8cff;
+  border-radius: 12px;
+  background: #eef5ff;
+  box-shadow: 0 16px 34px rgba(31, 61, 153, .12);
+}
+
+.showcase-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  background: linear-gradient(90deg, #26324a, #3454d1);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: -2px -16px 14px;
+}
+
+.showcase-tabs button {
+  min-height: 56px;
+  border: 1px solid #d9e6ff;
+  border-top: none;
+  background: white;
+  color: #2385e8;
+  font-size: 20px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.showcase-tabs button:first-child {
+  border-radius: 10px 0 0 0;
+}
+
+.showcase-tabs button:last-child {
+  border-radius: 0 10px 0 0;
+}
+
+.showcase-tabs button.active {
+  background: #eaf3ff;
+  color: #172033;
+  box-shadow: inset 0 3px 0 #2f55d4;
+}
+
+.showcase-categories {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 0 12px;
+}
+
+.showcase-categories button {
+  min-height: 34px;
+  border: 1px solid #cfdcff;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: white;
+  color: #172033;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.showcase-categories button.active {
+  background: #2f55d4;
+  border-color: #2f55d4;
   color: white;
 }
 
-.promo-strip div {
-  padding: 10px 14px;
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.showcase-card {
+  min-width: 0;
+  padding: 10px;
   border-radius: 12px;
-  background: rgba(255,255,255,.11);
+  background: white;
+  box-shadow: 0 10px 24px rgba(23, 32, 51, .08);
+  display: grid;
+  grid-template-rows: auto auto auto auto auto 1fr;
+  gap: 7px;
 }
 
-.promo-strip b {
-  display: block;
-  margin-bottom: 4px;
+.showcase-image {
+  position: relative;
+  height: 132px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
 }
 
-.promo-strip span {
-  font-size: 13px;
-  opacity: .9;
+.showcase-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #e11d48;
+  color: white;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.showcase-card p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.showcase-card h3 {
+  min-height: 40px;
+  margin: 0;
+  color: #172033;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.showcase-card strong {
+  color: #dc2626;
+  font-size: 18px;
+}
+
+.showcase-stock {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.showcase-card button {
+  align-self: end;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #172033;
+  color: white;
+  font-weight: 900;
+}
+
+.showcase-card button:disabled {
+  background: #cbd5e1;
+}
+
+.showcase-empty {
+  padding: 26px;
+  border-radius: 12px;
+  background: white;
+  text-align: center;
+  color: #64748b;
+  font-weight: 900;
 }
 
 .section-head {
@@ -2302,6 +4034,21 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.catalog-head {
+  scroll-margin-top: 150px;
+  gap: 16px;
+}
+
+.category-product-section {
+  scroll-margin-top: 150px;
+  margin-bottom: 28px;
+}
+
+.category-product-head {
+  margin-top: 0;
+  padding-top: 4px;
 }
 
 .section-head h2 {
@@ -2313,9 +4060,25 @@ button {
   color: #6b7280;
 }
 
+.catalog-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.catalog-tools select {
+  min-height: 40px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: white;
+  color: #172033;
+  font-weight: 800;
+}
+
 .outline-btn {
-  border: 1px solid #3454d1;
-  color: #3454d1;
+  border: 1px solid #2f55d4;
+  color: #2f55d4;
   background: white;
   border-radius: 10px;
   padding: 10px 14px;
@@ -2324,26 +4087,97 @@ button {
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .product-card {
-  padding: 16px;
+  padding: 12px;
   transition: .2s;
+  border: 1px solid #edf1f7;
+  display: grid;
+  grid-template-rows: auto auto auto auto auto 1fr;
+  min-width: 0;
 }
 
 .product-card:hover {
   transform: translateY(-2px);
+  box-shadow: 0 18px 36px rgba(23, 32, 51, 0.12);
 }
 
 .product-image {
-  height: 124px;
-  border-radius: 14px;
-  background: #f7f9ff;
+  position: relative;
+  height: 150px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  font-size: 54px;
+  overflow: hidden;
+}
+
+.product-image::after {
+  content: '';
+  position: absolute;
+  inset: auto 18px 12px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .08);
+  filter: blur(3px);
+}
+
+.product-visual {
+  position: relative;
+  z-index: 1;
+  font-size: 58px;
+}
+
+.tone-home {
+  background: linear-gradient(135deg, #fff7ed, #fde68a);
+}
+
+.tone-tech {
+  background: linear-gradient(135deg, #eff6ff, #bfdbfe);
+}
+
+.tone-food {
+  background: linear-gradient(135deg, #f0fdf4, #bbf7d0);
+}
+
+.tone-fashion {
+  background: linear-gradient(135deg, #fdf2f8, #fbcfe8);
+}
+
+.tone-office {
+  background: linear-gradient(135deg, #f8fafc, #cbd5e1);
+}
+
+.tone-default {
+  background: linear-gradient(135deg, #f8fafc, #e0f2fe);
+}
+
+.product-badge {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 10px;
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.stock-ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.stock-low {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.stock-empty {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .product-meta {
@@ -2357,17 +4191,55 @@ button {
 
 .product-card h3 {
   min-height: 46px;
+  margin: 10px 0 8px;
   color: #172033;
+  line-height: 1.3;
+}
+
+.price-row {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .price {
+  margin: 0;
   color: #3454d1;
   font-size: 20px;
   font-weight: 900;
 }
 
+.cart-chip {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.stock-meter {
+  height: 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+
+.stock-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #2f55d4);
+}
+
 .stock {
+  margin: 0 0 12px;
   font-weight: 800;
+  font-size: 13px;
 }
 
 .in-stock {
@@ -2383,7 +4255,8 @@ button {
   border: none;
   border-radius: 10px;
   padding: 11px 14px;
-  background: #3454d1;
+  align-self: end;
+  background: #172033;
   color: white;
   font-weight: 900;
 }
@@ -2391,6 +4264,47 @@ button {
 .product-card button:disabled {
   background: #cbd5e1;
   cursor: not-allowed;
+}
+
+.floating-cart-summary {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 90;
+  width: min(560px, calc(100% - 24px));
+  min-height: 58px;
+  border-radius: 14px;
+  padding: 9px 10px 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #172033;
+  color: white;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .28);
+}
+
+.floating-cart-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.floating-cart-summary span {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.floating-cart-summary button {
+  border: none;
+  border-radius: 10px;
+  padding: 11px 16px;
+  background: #ffba49;
+  color: #172033;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 /* TABLE PAGES */
@@ -2483,6 +4397,408 @@ th {
 .status-info {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background: #f8fafc;
+}
+
+.order-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.order-detail-grid div {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.order-detail-grid span {
+  display: block;
+  color: #64748b;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.detail-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+}
+
+.warehouse-item {
+  padding: 2px 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.page-empty {
+  margin-top: 12px;
+}
+
+.page-cart-list {
+  margin: 0 0 18px;
+}
+
+.page-checkout {
+  margin: 0;
+}
+
+.lookup-box {
+  margin: 16px 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.lookup-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.lookup-row input {
+  flex: 1;
+  min-height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 0 12px;
+}
+
+.shipping-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.shipping-form label,
+.drawer-shipping label {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.shipping-form input,
+.shipping-form textarea,
+.drawer-shipping input,
+.drawer-shipping textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.account-form {
+  max-width: 520px;
+}
+
+.success-text {
+  background: #dcfce7;
+  color: #166534;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.field-hint {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.manufacturer-section {
+  max-width: 1180px;
+  margin: 22px auto 0;
+  padding: 0 12px 30px;
+}
+
+.footer-adjacent {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 24px;
+}
+
+.manufacturer-section h2 {
+  margin: 0 0 16px;
+  color: #172033;
+  font-size: 28px;
+}
+
+.manufacturer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manufacturer-card {
+  min-height: 188px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 18px;
+  background: white;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  box-shadow: 0 10px 26px rgba(23, 32, 51, .06);
+}
+
+.manufacturer-logo {
+  width: 94px;
+  height: 82px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #eff6ff, #ecfdf5);
+  color: #2f55d4;
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.manufacturer-card h3 {
+  margin: 8px 0 0;
+  color: #172033;
+  font-size: 16px;
+}
+
+.manufacturer-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.manufacturer-card span {
+  color: #2f55d4;
+  font-weight: 900;
+}
+
+.site-footer {
+  margin-top: 36px;
+  background: white;
+  border-top: 1px solid #e5e7eb;
+  color: #172033;
+  font-size: 13px;
+}
+
+.footer-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 12px 24px;
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1.1fr 1fr;
+  gap: 28px;
+}
+
+.footer-column {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+}
+
+.footer-column h3 {
+  margin: 0 0 6px;
+  color: #172033;
+  font-size: 14px;
+}
+
+.footer-column p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.footer-column a {
+  color: #26324a;
+  text-decoration: none;
+}
+
+.footer-column a:hover {
+  color: #2f55d4;
+  text-decoration: underline;
+}
+
+.payment-icons,
+.social-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.payment-logo {
+  width: 82px;
+  height: 38px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 5px;
+  background: #f8fafc;
+  object-fit: contain;
+}
+
+.subscribe-box {
+  padding: 10px;
+  border-radius: 10px;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.subscribe-box b,
+.subscribe-box span {
+  display: block;
+}
+
+.subscribe-box span {
+  margin-top: 4px;
+  color: #64748b;
+}
+
+.support-column input[type="email"],
+.support-column input[type="text"] {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 10px;
+}
+
+.footer-check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.subscribe-btn {
+  border: none;
+  border-radius: 8px;
+  min-height: 40px;
+  background: #e11d48;
+  color: white;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.app-download {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.app-download > div:last-child {
+  display: grid;
+  gap: 7px;
+}
+
+.qr-box {
+  width: 84px;
+  height: 84px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(90deg, #111827 8px, transparent 8px) 0 0 / 18px 18px,
+    linear-gradient(#111827 8px, transparent 8px) 0 0 / 18px 18px,
+    white;
+  color: #e11d48;
+  font-weight: 900;
+}
+
+.app-badge-image {
+  width: 150px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.social-links a {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #f1f5f9;
+  color: #172033;
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.social-links a:nth-child(1) {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.social-links a:nth-child(2) {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.social-links a:nth-child(3) {
+  background: #fce7f3;
+  color: #db2777;
+}
+
+.social-links a:nth-child(4) {
+  background: #111827;
+  color: white;
+}
+
+.social-links a:nth-child(5) {
+  width: auto;
+  padding: 0 8px;
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.brand-badge {
+  width: fit-content;
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: #ef4444;
+  color: white;
+  font-size: 15px;
+}
+
+.brand-badge.care {
+  background: #334155;
+}
+
+.brand-badge.news {
+  background: #f97316;
+}
+
+.footer-tags {
+  border-top: 1px solid #e5e7eb;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 22px;
+}
+
+.footer-tags a {
+  color: #334155;
+  text-decoration: none;
+}
+
+.footer-bottom {
+  border-top: 1px solid #e5e7eb;
+  padding: 14px 12px 22px;
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  color: #64748b;
+  text-align: center;
+  font-size: 12px;
 }
 
 /* DRAWER & MODAL */
@@ -2725,6 +5041,24 @@ th {
   line-height: 1.45;
 }
 
+.debt-hint b {
+  color: #b45309;
+}
+
+.small-top {
+  margin-top: 8px;
+}
+
+.warehouse-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.order-detail-actions {
+  margin-bottom: 16px;
+}
+
 .customer-order-info {
   display: grid;
   gap: 4px;
@@ -2886,13 +5220,36 @@ th {
   margin-top: 18px;
 }
 
+.confirm-layout {
+  display: grid;
+  gap: 14px;
+}
+
+.confirm-summary {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.sync-refresh {
+  width: fit-content;
+  margin: 8px 0 16px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
 /* RESPONSIVE */
 @media (max-width: 1100px) {
   .header-main {
     grid-template-columns: auto 1fr auto;
   }
 
-  .category-button,
   .location-button {
     display: none;
   }
@@ -2905,6 +5262,10 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .hero-banner {
+    grid-template-columns: 1fr;
+  }
+
   .member-card {
     display: none;
   }
@@ -2913,8 +5274,13 @@ th {
     grid-template-columns: repeat(3, 1fr);
   }
 
-  .promo-strip {
-    grid-template-columns: 1fr;
+  .footer-inner {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .showcase-grid,
+  .manufacturer-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -2942,11 +5308,36 @@ th {
     grid-column: 2;
   }
 
+  .hero-banner {
+    padding: 20px;
+  }
+
+  .showcase-tabs,
+  .showcase-grid,
+  .manufacturer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .catalog-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .catalog-tools {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .product-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
   .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-inner {
     grid-template-columns: 1fr;
   }
 
@@ -2973,6 +5364,26 @@ th {
 
   .hero-content h1 {
     font-size: 28px;
+  }
+
+  .hero-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hero-stats span {
+    min-width: 0;
+  }
+
+  .showcase-tabs,
+  .showcase-grid,
+  .manufacturer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .floating-cart-summary {
+    bottom: 10px;
+    border-radius: 12px;
   }
 
   .cart-item {

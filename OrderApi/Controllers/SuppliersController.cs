@@ -8,7 +8,7 @@ using OrderApi.Models;
 namespace OrderApi.Controllers
 {
     [ApiController]
-    [Route("api/suppliers")]
+    [Route("api/Suppliers")]
     [Authorize(Roles = "Admin,Sales")]
     public class SuppliersController : ControllerBase
     {

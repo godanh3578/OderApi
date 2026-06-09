@@ -33,6 +33,9 @@ namespace OrderApi.Services
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Cần ít nhất một sản phẩm.");
 
+            if (dto.DiscountAmount < 0)
+                throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
+
             decimal totalAmount = 0;
 
             foreach (var item in dto.Items)
@@ -85,6 +88,12 @@ namespace OrderApi.Services
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Một đơn hàng phải có ít nhất một sản phẩm.");
 
+            if (dto.DiscountAmount < 0)
+                throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
+
+            if (dto.PaidAmount < 0)
+                throw new InvalidOperationException("Số tiền thanh toán không được nhỏ hơn 0.");
+
             using var transaction = await _dbContext.Database.BeginTransactionAsync();
 
             var customer = await _dbContext.Customers.FindAsync(dto.CustomerId)
@@ -102,6 +111,17 @@ namespace OrderApi.Services
 
                 if (stock.QuantityAvailable < item.Quantity)
                     throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}");
+
+                stock.QuantityAvailable -= item.Quantity;
+                if (stock.QuantityAvailable <= 0)
+                {
+                    stock.QuantityAvailable = 0;
+                    stock.StockStatus = StockStatus.OutOfStock;
+                }
+                else if (stock.QuantityAvailable <= 5)
+                {
+                    stock.StockStatus = StockStatus.LowStock;
+                }
 
                 items.Add(new CreateOrderDetailDto
                 {

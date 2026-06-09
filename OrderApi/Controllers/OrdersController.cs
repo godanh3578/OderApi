@@ -7,8 +7,7 @@ using System.Security.Claims;
 namespace OrderApi.Controllers
 {
     [ApiController]
-    [Route("api/orders")]
-    [Authorize(Roles = "Admin,Sales,Warehouse")]
+    [Route("api/Orders")]
     public class OrdersController : ControllerBase
     {
         private readonly IOrderService _orderService;
@@ -19,13 +18,42 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] string? search)
+        public async Task<IActionResult> GetAll([FromQuery] string? search, [FromQuery] int? customerId)
         {
+            if (customerId.HasValue)
+            {
+                var customerOrders = await _orderService.GetOrdersByCustomerIdAsync(customerId.Value, search);
+                return Ok(customerOrders);
+            }
+
+            var user = HttpContext?.User;
+
+            if (user?.Identity?.IsAuthenticated != true)
+                return Unauthorized(new { message = "Cần đăng nhập nhân viên để xem toàn bộ đơn hàng." });
+
+            if (!user.IsInRole("Admin") && !user.IsInRole("Sales") && !user.IsInRole("Warehouse"))
+                return Forbid();
+
             var orders = await _orderService.GetAllOrdersAsync(search);
             return Ok(orders);
         }
 
+        [HttpGet("lookup")]
+        [AllowAnonymous]
+        public async Task<IActionResult> Lookup([FromQuery] string orderCode, [FromQuery] string phone)
+        {
+            if (string.IsNullOrWhiteSpace(orderCode) || string.IsNullOrWhiteSpace(phone))
+                return BadRequest(new { message = "Vui lòng nhập mã đơn và số điện thoại." });
+
+            var order = await _orderService.LookupOrderAsync(orderCode, phone);
+            if (order == null)
+                return NotFound(new { message = "Không tìm thấy đơn hàng phù hợp." });
+
+            return Ok(order);
+        }
+
         [HttpGet("{id}")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetById(int id)
         {
             var order = await _orderService.GetOrderByIdAsync(id);
@@ -52,7 +80,7 @@ namespace OrderApi.Controllers
         }
 
         [HttpPut("{id}/status")]
-        [Authorize(Roles = "Admin,Sales")]
+        [Authorize(Roles = "Admin,Sales,Warehouse")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusRequest request)
         {
             try

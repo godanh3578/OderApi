@@ -75,6 +75,7 @@ try
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
     db.Database.Migrate();
+    await DbSeeder.SeedAsync(db);
 }
 catch (Exception ex)
 {

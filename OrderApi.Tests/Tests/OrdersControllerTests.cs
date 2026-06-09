@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,6 +17,20 @@ namespace OrderApi.Tests.Tests
 {
     public class OrdersControllerTests
     {
+        private static void SetStaffUser(OrdersController controller, string role = "Sales", string username = "sales01")
+        {
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.Name, username),
+                new("role", role)
+            };
+            var identity = new ClaimsIdentity(claims, "TestAuth", ClaimTypes.Name, "role");
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+            };
+        }
+
         private static (OrderDbContext context, OrdersController controller) CreateController()
         {
             var options = new DbContextOptionsBuilder<OrderDbContext>()
@@ -52,6 +68,7 @@ namespace OrderApi.Tests.Tests
         public async Task Create_Get_Update_Cancel_Delete_Order()
         {
             var (_, controller) = CreateController();
+            SetStaffUser(controller);
 
             var dto = new CreateOrderDto
             {
@@ -68,9 +85,13 @@ namespace OrderApi.Tests.Tests
             var created = Assert.IsType<OrderDto>((createResult as OkObjectResult)!.Value);
             Assert.Equal(100, created.TotalAmount);
 
-            var getAll = await controller.GetAll(null);
-            var list = Assert.IsType<List<OrderDto>>((getAll as OkObjectResult)!.Value);
-            Assert.Single(list);
+            var getByCustomer = await controller.GetAll(null, 1);
+            var customerList = Assert.IsType<List<OrderDto>>((getByCustomer as OkObjectResult)!.Value);
+            Assert.Single(customerList);
+
+            var getAllStaff = await controller.GetAll(null, null);
+            var staffList = Assert.IsType<List<OrderDto>>((getAllStaff as OkObjectResult)!.Value);
+            Assert.Single(staffList);
 
             var getById = await controller.GetById(created.OrderId);
             var fetched = Assert.IsType<OrderDto>((getById as OkObjectResult)!.Value);
@@ -88,6 +109,16 @@ namespace OrderApi.Tests.Tests
 
             var afterDelete = await controller.GetById(created.OrderId);
             Assert.IsType<NotFoundResult>(afterDelete);
+        }
+
+        [Fact]
+        public async Task GetAll_WithoutAuth_ReturnsUnauthorized_WhenNoCustomerId()
+        {
+            var (_, controller) = CreateController();
+
+            var result = await controller.GetAll(null, null);
+
+            Assert.IsType<UnauthorizedObjectResult>(result);
         }
     }
 }

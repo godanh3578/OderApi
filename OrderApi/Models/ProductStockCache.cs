@@ -24,6 +24,9 @@ namespace OrderApi.Models
         [StringLength(200)]
         public string ProductName { get; set; } = "";
 
+        [StringLength(100)]
+        public string CategoryName { get; set; } = "";
+
         [Range(0, double.MaxValue)]
         public decimal SellingPrice { get; set; }
 

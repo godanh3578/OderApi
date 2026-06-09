@@ -13,6 +13,7 @@ namespace OrderApi.DTOs.Orders
         public decimal PaidAmount { get; set; }
         public decimal DebtAmount { get; set; }
         public string PaymentStatus { get; set; } = "";
+        public string? PaymentMethod { get; set; }
         public string OrderStatus { get; set; } = "";
         public string CreatedBy { get; set; } = "";
         public DateTime CreatedAt { get; set; }

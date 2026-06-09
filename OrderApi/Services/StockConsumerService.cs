@@ -106,6 +106,7 @@ namespace OrderApi.Services
 
             cache.ProductCode = data.ProductCode;
             cache.ProductName = data.ProductName;
+            cache.CategoryName = data.CategoryName;
             cache.SellingPrice = data.SellingPrice;
             cache.QuantityAvailable = data.QuantityAvailable;
             cache.StockStatus = stockStatus;

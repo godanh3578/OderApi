@@ -26,6 +26,7 @@ namespace OrderApi.Services
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Items)
+                .Include(o => o.Payments)
                 .FirstOrDefaultAsync(o => o.OrderId == orderId);
 
             return order == null ? null : MapToDto(order);
@@ -36,17 +37,46 @@ namespace OrderApi.Services
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Items)
+                .Include(o => o.Payments)
                 .FirstOrDefaultAsync(o => o.OrderCode == orderCode);
 
             return order == null ? null : MapToDto(order);
         }
 
+        public async Task<OrderDto?> LookupOrderAsync(string orderCode, string phone)
+        {
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Items)
+                .Include(o => o.Payments)
+                .FirstOrDefaultAsync(o => o.OrderCode == orderCode.Trim());
+
+            if (order?.Customer == null || order.Customer.Phone != phone.Trim())
+                return null;
+
+            return MapToDto(order);
+        }
+
         public async Task<List<OrderDto>> GetAllOrdersAsync(string? search = null)
+        {
+            return await QueryOrdersAsync(search, null);
+        }
+
+        public async Task<List<OrderDto>> GetOrdersByCustomerIdAsync(int customerId, string? search = null)
+        {
+            return await QueryOrdersAsync(search, customerId);
+        }
+
+        private async Task<List<OrderDto>> QueryOrdersAsync(string? search, int? customerId)
         {
             var query = _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Items)
+                .Include(o => o.Payments)
                 .AsQueryable();
+
+            if (customerId.HasValue)
+                query = query.Where(o => o.CustomerId == customerId.Value);
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -69,10 +99,16 @@ namespace OrderApi.Services
             if (string.IsNullOrWhiteSpace(dto.CreatedBy))
                 throw new InvalidOperationException("Đơn hàng phải có nhân viên tạo đơn.");
 
+            if (dto.DiscountAmount < 0)
+                throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
+
             foreach (var itemDto in dto.Items)
             {
                 if (itemDto.Quantity <= 0)
                     throw new InvalidOperationException("Số lượng sản phẩm phải lớn hơn 0.");
+
+                if (itemDto.DiscountAmount < 0)
+                    throw new InvalidOperationException("Chiết khấu sản phẩm không được nhỏ hơn 0.");
 
                 var stock = await _dbContext.ProductStockCaches
                     .FirstOrDefaultAsync(p => p.ProductId == itemDto.ProductId);
@@ -187,6 +223,8 @@ namespace OrderApi.Services
 
         private static OrderDto MapToDto(Order order)
         {
+            var latestPayment = order.Payments.OrderByDescending(p => p.PaymentDate).FirstOrDefault();
+
             return new OrderDto
             {
                 OrderId = order.OrderId,
@@ -200,6 +238,7 @@ namespace OrderApi.Services
                 PaidAmount = order.PaidAmount,
                 DebtAmount = order.DebtAmount,
                 PaymentStatus = order.PaymentStatus.ToString(),
+                PaymentMethod = latestPayment?.PaymentMethod.ToString(),
                 OrderStatus = order.OrderStatus.ToString(),
                 CreatedBy = order.CreatedBy,
                 CreatedAt = order.CreatedAt,

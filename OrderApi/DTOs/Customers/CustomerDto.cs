@@ -18,6 +18,14 @@ namespace OrderApi.DTOs.Customers
         public string Status { get; set; } = "Active";
     }
 
+    public class UpdateCustomerProfileDto
+    {
+        public string Phone { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Address { get; set; } = "";
+    }
+
     public class CustomerDto
     {
         public int CustomerId { get; set; }

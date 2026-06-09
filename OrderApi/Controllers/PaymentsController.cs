@@ -6,7 +6,7 @@ using OrderApi.Services;
 namespace OrderApi.Controllers
 {
     [ApiController]
-    [Route("api/payments")]
+    [Route("api/Payments")]
     [Authorize(Roles = "Admin,Sales")]
     public class PaymentsController : ControllerBase
     {
