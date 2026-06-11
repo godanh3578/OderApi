@@ -114,6 +114,22 @@ namespace OrderApi.Controllers
             }
         }
 
+        [HttpPut("{id}/customer-cancel")]
+        [AllowAnonymous]
+        public async Task<IActionResult> CustomerCancel(int id, [FromBody] CustomerCancelOrderRequest request)
+        {
+            try
+            {
+                var ok = await _orderService.CancelOrderForCustomerAsync(id, request.Phone);
+                if (!ok) return NotFound(new { message = "Không tìm thấy đơn hàng phù hợp với số điện thoại." });
+                return Ok(new { message = "Đơn hàng đã được hủy" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
@@ -127,5 +143,10 @@ namespace OrderApi.Controllers
     public class UpdateOrderStatusRequest
     {
         public string Status { get; set; } = "";
+    }
+
+    public class CustomerCancelOrderRequest
+    {
+        public string Phone { get; set; } = "";
     }
 }

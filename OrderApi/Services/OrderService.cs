@@ -191,13 +191,72 @@ namespace OrderApi.Services
 
         public async Task<bool> CancelOrderAsync(int orderId)
         {
-            var order = await _dbContext.Orders.FindAsync(orderId);
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Debt)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
             if (order == null)
                 return false;
 
             if (order.OrderStatus == OrderStatus.Paid)
                 throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
 
+            if (order.Customer != null && order.DebtAmount > 0)
+            {
+                order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - order.DebtAmount);
+                order.Customer.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (order.Debt != null)
+            {
+                order.Debt.PaidAmount = order.Debt.DebtAmount;
+                order.Debt.DebtStatus = DebtStatus.Paid;
+                order.Debt.UpdatedAt = DateTime.UtcNow;
+            }
+
+            order.DebtAmount = 0;
+            order.OrderStatus = OrderStatus.Cancelled;
+            order.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> CancelOrderForCustomerAsync(int orderId, string phone)
+        {
+            var normalizedPhone = (phone ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(normalizedPhone))
+                return false;
+
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Debt)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
+            if (order == null || order.Customer == null)
+                return false;
+
+            if (!string.Equals(order.Customer.Phone?.Trim(), normalizedPhone, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (order.OrderStatus == OrderStatus.Paid)
+                throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
+
+            if (order.OrderStatus == OrderStatus.Cancelled)
+                return true;
+
+            if (order.Customer != null && order.DebtAmount > 0)
+            {
+                order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - order.DebtAmount);
+                order.Customer.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (order.Debt != null)
+            {
+                order.Debt.PaidAmount = order.Debt.DebtAmount;
+                order.Debt.DebtStatus = DebtStatus.Paid;
+                order.Debt.UpdatedAt = DateTime.UtcNow;
+            }
+
+            order.DebtAmount = 0;
             order.OrderStatus = OrderStatus.Cancelled;
             order.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();

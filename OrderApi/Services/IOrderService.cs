@@ -12,6 +12,7 @@ namespace OrderApi.Services
         Task<OrderDto> CreateOrderAsync(CreateOrderDto dto);
         Task<OrderDto> UpdateOrderStatusAsync(int orderId, string status);
         Task<bool> CancelOrderAsync(int orderId);
+        Task<bool> CancelOrderForCustomerAsync(int orderId, string phone);
         Task<bool> DeleteOrderAsync(int orderId);
     }
 }

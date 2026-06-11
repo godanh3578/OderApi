@@ -899,7 +899,7 @@ function upsertLocalOrder(order) {
 
 function mergeOrders(remoteOrders, localOrders) {
   const map = new Map()
-  for (const order of [...localOrders, ...remoteOrders]) {
+  for (const order of [...remoteOrders, ...localOrders]) {
     map.set(order.orderCode || order.orderId || order.id, order)
   }
   return [...map.values()].sort((a, b) => new Date(b.orderDate || 0) - new Date(a.orderDate || 0))
@@ -1260,7 +1260,13 @@ async function cancelOrder(order, staff = false) {
   const id = order.orderId || order.id
   try {
     if (id && !String(id).startsWith('local-') && !order.isLocalDemo) {
-      await api.put(`/api/Orders/${id}/cancel`)
+      if (staff) {
+        await api.put(`/api/Orders/${id}/cancel`)
+      } else {
+        await api.put(`/api/Orders/${id}/customer-cancel`, {
+          phone: currentUser.value?.phone || order.customerPhone || ''
+        })
+      }
       await loadStaffData()
       await loadMyOrders()
       showNotice('Đã hủy đơn hàng.')
