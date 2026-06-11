@@ -194,12 +194,18 @@ namespace OrderApi.Services
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Debt)
+                .Include(o => o.Items)
                 .FirstOrDefaultAsync(o => o.OrderId == orderId);
             if (order == null)
                 return false;
 
             if (order.OrderStatus == OrderStatus.Paid)
                 throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
+
+            if (order.OrderStatus == OrderStatus.Cancelled)
+                return true;
+
+            await RestoreStockForCancelledOrderAsync(order);
 
             if (order.Customer != null && order.DebtAmount > 0)
             {
@@ -230,6 +236,7 @@ namespace OrderApi.Services
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Debt)
+                .Include(o => o.Items)
                 .FirstOrDefaultAsync(o => o.OrderId == orderId);
             if (order == null || order.Customer == null)
                 return false;
@@ -242,6 +249,8 @@ namespace OrderApi.Services
 
             if (order.OrderStatus == OrderStatus.Cancelled)
                 return true;
+
+            await RestoreStockForCancelledOrderAsync(order);
 
             if (order.Customer != null && order.DebtAmount > 0)
             {
@@ -261,6 +270,36 @@ namespace OrderApi.Services
             order.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
             return true;
+        }
+
+        private async Task RestoreStockForCancelledOrderAsync(Order order)
+        {
+            foreach (var item in order.Items)
+            {
+                var stock = await _dbContext.ProductStockCaches
+                    .FirstOrDefaultAsync(p => p.ProductId == item.ProductId);
+
+                if (stock == null)
+                {
+                    stock = new ProductStockCache
+                    {
+                        ProductId = item.ProductId,
+                        ProductCode = item.ProductCode,
+                        ProductName = item.ProductName,
+                        SellingPrice = item.UnitPrice
+                    };
+                    _dbContext.ProductStockCaches.Add(stock);
+                }
+
+                stock.QuantityAvailable += item.Quantity;
+                stock.StockStatus = stock.QuantityAvailable <= 0
+                    ? StockStatus.OutOfStock
+                    : stock.QuantityAvailable <= 5
+                        ? StockStatus.LowStock
+                        : StockStatus.InStock;
+                stock.IsDeleted = false;
+                stock.LastUpdatedAt = DateTime.UtcNow;
+            }
         }
 
         public async Task<bool> DeleteOrderAsync(int orderId)

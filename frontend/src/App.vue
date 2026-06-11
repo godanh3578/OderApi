@@ -1267,6 +1267,7 @@ async function cancelOrder(order, staff = false) {
           phone: currentUser.value?.phone || order.customerPhone || ''
         })
       }
+      await loadProducts()
       await loadStaffData()
       await loadMyOrders()
       showNotice('Đã hủy đơn hàng.')
@@ -1279,6 +1280,7 @@ async function cancelOrder(order, staff = false) {
       return
     }
     markOrderCancelled(order)
+    await loadProducts()
     await loadMyOrders()
     if (staff) await loadStaffData()
     showNotice('Đã cập nhật hủy đơn trong dữ liệu demo.')
