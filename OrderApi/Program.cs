@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using OrderApi.Data;
@@ -7,14 +8,29 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
+var localDbPath = Path.Combine(builder.Environment.ContentRootPath, ".localdb");
+Directory.CreateDirectory(localDbPath);
+var dataProtectionPath = Path.Combine(localDbPath, "keys");
+Directory.CreateDirectory(dataProtectionPath);
+AppDomain.CurrentDomain.SetData("DataDirectory", localDbPath);
+var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?.Replace("|DataDirectory|", localDbPath);
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+    .SetApplicationName("OrderApi");
 
 builder.Services.AddDbContext<OrderDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(defaultConnection));
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "OrderApiSuperSecretKey123!@#";
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "OrderApiSuperSecretKey123!@#ChangeMe2026";
 var jwtIss = builder.Configuration["Jwt:Issuer"] ?? "OrderApi";
 var jwtAud = builder.Configuration["Jwt:Audience"] ?? "OrderApiUsers";
 var keyBytes = Encoding.UTF8.GetBytes(jwtKey);
@@ -22,6 +38,7 @@ var keyBytes = Encoding.UTF8.GetBytes(jwtKey);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -75,6 +92,15 @@ try
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
     db.Database.Migrate();
+    await db.Database.ExecuteSqlRawAsync("""
+        IF OBJECT_ID(N'[ProductStockCaches]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'ProductStockCaches', N'CategoryName') IS NULL
+        BEGIN
+            ALTER TABLE [ProductStockCaches]
+            ADD [CategoryName] nvarchar(100) NOT NULL
+                CONSTRAINT [DF_ProductStockCaches_CategoryName] DEFAULT N''
+        END
+        """);
     await DbSeeder.SeedAsync(db);
 }
 catch (Exception ex)

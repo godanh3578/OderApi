@@ -129,10 +129,21 @@ namespace OrderApi.Services
             if (customer == null)
                 throw new KeyNotFoundException($"Customer {customerId} not found");
 
-            if (!string.Equals(customer.Phone, dto.Phone.Trim(), StringComparison.Ordinal))
-                throw new InvalidOperationException("Không xác thực được khách hàng.");
+            var newPhone = (dto.Phone ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(newPhone))
+                throw new InvalidOperationException("Số điện thoại không được để trống.");
+
+            if (!string.Equals(customer.Phone, newPhone, StringComparison.Ordinal))
+            {
+                var phoneExists = await _dbContext.Customers
+                    .AnyAsync(c => c.CustomerId != customerId && c.Phone == newPhone);
+
+                if (phoneExists)
+                    throw new InvalidOperationException("Số điện thoại đã được đăng ký.");
+            }
 
             customer.FullName = dto.FullName;
+            customer.Phone = newPhone;
             customer.Email = dto.Email;
             customer.Address = dto.Address;
             customer.UpdatedAt = DateTime.UtcNow;

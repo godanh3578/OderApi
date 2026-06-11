@@ -25,7 +25,7 @@ namespace OrderApi.Controllers
             var role = string.IsNullOrWhiteSpace(request.Role) ? "Sales" : request.Role;
             var username = string.IsNullOrWhiteSpace(request.Username) ? "sales01" : request.Username;
 
-            var key = _config["Jwt:Key"] ?? "OrderApiSuperSecretKey123!@#";
+            var key = _config["Jwt:Key"] ?? "OrderApiSuperSecretKey123!@#ChangeMe2026";
             var issuer = _config["Jwt:Issuer"] ?? "OrderApi";
             var audience = _config["Jwt:Audience"] ?? "OrderApiUsers";
 
