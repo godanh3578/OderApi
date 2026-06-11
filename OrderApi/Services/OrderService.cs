@@ -203,9 +203,18 @@ namespace OrderApi.Services
                 throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
 
             if (order.OrderStatus == OrderStatus.Cancelled)
-                return true;
+            {
+                if (order.StockRestoredAt == null)
+                {
+                    await RestoreStockForCancelledOrderAsync(order);
+                    await _dbContext.SaveChangesAsync();
+                }
 
-            await RestoreStockForCancelledOrderAsync(order);
+                return true;
+            }
+
+            if (order.StockRestoredAt == null)
+                await RestoreStockForCancelledOrderAsync(order);
 
             if (order.Customer != null && order.DebtAmount > 0)
             {
@@ -248,9 +257,18 @@ namespace OrderApi.Services
                 throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
 
             if (order.OrderStatus == OrderStatus.Cancelled)
-                return true;
+            {
+                if (order.StockRestoredAt == null)
+                {
+                    await RestoreStockForCancelledOrderAsync(order);
+                    await _dbContext.SaveChangesAsync();
+                }
 
-            await RestoreStockForCancelledOrderAsync(order);
+                return true;
+            }
+
+            if (order.StockRestoredAt == null)
+                await RestoreStockForCancelledOrderAsync(order);
 
             if (order.Customer != null && order.DebtAmount > 0)
             {
@@ -300,6 +318,8 @@ namespace OrderApi.Services
                 stock.IsDeleted = false;
                 stock.LastUpdatedAt = DateTime.UtcNow;
             }
+
+            order.StockRestoredAt = DateTime.UtcNow;
         }
 
         public async Task<bool> DeleteOrderAsync(int orderId)
