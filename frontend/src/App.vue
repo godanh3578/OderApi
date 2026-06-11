@@ -130,6 +130,106 @@ const accountForm = ref({ fullName: '', phone: '', email: '', address: '' })
 const accountProfile = ref({ gender: '', day: '', month: '', year: '' })
 const accountEditing = ref({ email: false, phone: false })
 const accountMessage = ref('')
+const activeAccountTab = ref('profile')
+const avatarUrl = ref('')
+
+const showAddressModal = ref(false)
+const editingAddressIndex = ref(-1)
+const addressForm = ref({
+  fullName: '',
+  phone: '',
+  province: '',
+  street: '',
+  type: 'Nhà Riêng',
+  isDefault: false
+})
+
+const parsedAddresses = computed(() => {
+  if (!accountForm.value.address) return []
+  try {
+    const arr = JSON.parse(accountForm.value.address)
+    if (Array.isArray(arr)) return arr
+    return []
+  } catch (e) {
+    return [{
+      fullName: accountForm.value.fullName,
+      phone: accountForm.value.phone,
+      province: '',
+      street: accountForm.value.address,
+      type: 'Nhà Riêng',
+      isDefault: true
+    }]
+  }
+})
+
+function openAddressModal() {
+  addressForm.value = {
+    fullName: '',
+    phone: '',
+    province: '',
+    street: '',
+    type: 'Nhà Riêng',
+    isDefault: parsedAddresses.value.length === 0
+  }
+  editingAddressIndex.value = -1
+  showAddressModal.value = true
+}
+
+function closeAddressModal() {
+  showAddressModal.value = false
+}
+
+function submitAddress() {
+  let list = [...parsedAddresses.value]
+  if (addressForm.value.isDefault) {
+    list.forEach(a => a.isDefault = false)
+  }
+  
+  if (editingAddressIndex.value >= 0) {
+    list[editingAddressIndex.value] = { ...addressForm.value }
+  } else {
+    list.push({ ...addressForm.value })
+  }
+  
+  if (list.length > 0 && !list.some(a => a.isDefault)) {
+    list[0].isDefault = true
+  }
+
+  accountForm.value.address = JSON.stringify(list)
+  saveAccount()
+  closeAddressModal()
+}
+
+async function requestAccountDeletion() {
+  if (!confirm('Bạn có chắc chắn muốn yêu cầu xóa tài khoản này? Hành động này không thể hoàn tác!')) return
+
+  try {
+    if (currentUser.value?.customerId) {
+      await api.delete(`/api/Customers/${currentUser.value.customerId}`)
+    }
+    showNotice('Tài khoản đã được yêu cầu xóa.')
+    logoutCustomer()
+  } catch (error) {
+    showNotice(error.response?.data?.message || 'Có lỗi xảy ra khi yêu cầu xóa tài khoản.')
+  }
+}
+
+function editAddress(index) {
+  addressForm.value = { ...parsedAddresses.value[index] }
+  editingAddressIndex.value = index
+  showAddressModal.value = true
+}
+
+function deleteAddress(index) {
+  if (!confirm('Bạn có chắc chắn muốn xóa địa chỉ này?')) return
+  let list = [...parsedAddresses.value]
+  list.splice(index, 1)
+  if (list.length > 0 && !list.some(a => a.isDefault)) {
+    list[0].isDefault = true
+  }
+  accountForm.value.address = JSON.stringify(list)
+  saveAccount()
+}
 
 const staffData = ref({
   orders: [],
@@ -648,10 +748,21 @@ function clearCart() {
 }
 
 function initCheckoutShipping() {
+  let defaultAddress = currentUser.value?.address || ''
+  try {
+    const arr = JSON.parse(defaultAddress)
+    if (Array.isArray(arr) && arr.length > 0) {
+      const def = arr.find(a => a.isDefault) || arr[0]
+      defaultAddress = def.province ? `${def.street}, ${def.province}` : def.street
+    }
+  } catch (e) {
+    // ignore
+  }
+
   checkoutShipping.value = {
     fullName: currentUser.value?.fullName || '',
     phone: currentUser.value?.phone || '',
-    address: currentUser.value?.address || ''
+    address: defaultAddress
   }
   if (!checkout.value.depositAmount) checkout.value.depositAmount = Math.round(finalAmount.value * 0.3)
 }
@@ -675,6 +786,8 @@ function setCurrentCustomer(customer) {
     phone: customer.phone || '',
     email: customer.email || '',
     address: customer.address || '',
+    gender: customer.gender || '',
+    dateOfBirth: customer.dateOfBirth || null,
     currentDebt: Number(customer.currentDebt || 0),
     totalSpent: Number(customer.totalSpent || 0),
     walletBalance: Number(customer.walletBalance ?? currentUser.value?.walletBalance ?? 500000)
@@ -693,6 +806,8 @@ function createLocalDemoCustomer(profile) {
     phone: profile.phone,
     email: profile.email || '',
     address: profile.address || '',
+    gender: profile.gender,
+    dateOfBirth: profile.dateOfBirth,
     currentDebt: 0,
     totalSpent: 0,
     walletBalance: 500000
@@ -714,7 +829,9 @@ async function registerCustomer() {
       fullName: registerForm.value.fullName.trim(),
       phone: registerForm.value.phone.trim(),
       email: registerForm.value.email.trim(),
-      address: registerForm.value.address.trim()
+      address: registerForm.value.address.trim(),
+      gender: registerForm.value.gender.toString(),
+      dateOfBirth: registerForm.value.dateOfBirth.toISOString().split('T')[0],
     })
 
     saveDemoPassword(registerForm.value.phone.trim(), registerForm.value.password)
@@ -760,6 +877,7 @@ async function loginCustomer() {
   try {
     const res = await api.post('/api/Customers/demo-login', { phone: loginForm.value.phone.trim() })
     setCurrentCustomer(res.data)
+    loadAvatar(res.data)
     loginForm.value = { phone: '', password: '' }
     closeAuth()
     showNotice('Đăng nhập thành công.')
@@ -768,6 +886,7 @@ async function loginCustomer() {
     const localCustomer = loadDemoCustomer(loginForm.value.phone.trim())
     if (localCustomer) {
       setCurrentCustomer(localCustomer)
+      loadAvatar(localCustomer)
       loginForm.value = { phone: '', password: '' }
       closeAuth()
       showNotice('Đăng nhập bằng dữ liệu demo local.')
@@ -782,6 +901,7 @@ async function loginCustomer() {
 
 function logoutCustomer() {
   currentUser.value = null
+  avatarUrl.value = ''
   saveCustomerUser(null)
   myOrders.value = []
   showNotice('Đã đăng xuất.')
@@ -1062,12 +1182,48 @@ async function lookupOrder() {
   }
 }
 
+function avatarKey(user = currentUser.value) {
+  return user ? `avatar_${user.customerId}` : null
+}
+
+function loadAvatar(user = currentUser.value) {
+  const key = avatarKey(user)
+  avatarUrl.value = key ? (localStorage.getItem(key) || '') : ''
+}
+
+function selectAvatar(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  if (file.size > 1024 * 1024) {
+    showNotice('Ảnh vượt quá 1 MB, vui lòng chọn ảnh nhỏ hơn.', 'bad')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const dataUrl = e.target.result
+    avatarUrl.value = dataUrl
+    const key = avatarKey()
+    if (key) localStorage.setItem(key, dataUrl)
+    showNotice('Đã cập nhật ảnh đại diện.')
+  }
+  reader.readAsDataURL(file)
+}
+
 function initAccountForm() {
   accountForm.value = {
     fullName: currentUser.value?.fullName || '',
     phone: currentUser.value?.phone || '',
     email: currentUser.value?.email || '',
-    address: currentUser.value?.address || ''
+    address: currentUser.value?.address || '',
+    gender: currentUser.value?.gender || '',
+    dateOfBirth: currentUser.value?.dateOfBirth || '',
+  }
+  const dob = currentUser.value?.dateOfBirth ? new Date(currentUser.value.dateOfBirth) : null
+  accountProfile.value = {
+    gender: currentUser.value?.gender || '',
+    day: dob ? dob.getDate() : '',
+    month: dob ? dob.getMonth() + 1 : '',
+    year: dob ? dob.getFullYear() : ''
   }
   accountEditing.value = { email: false, phone: false }
 }
@@ -1092,18 +1248,54 @@ async function saveAccount() {
   }
 
   try {
+    const dobString = (accountProfile.value.year && accountProfile.value.month && accountProfile.value.day)
+      ? `${accountProfile.value.year}-${String(accountProfile.value.month).padStart(2, '0')}-${String(accountProfile.value.day).padStart(2, '0')}`
+      : null
+      
     const res = await api.put(`/api/Customers/${currentUser.value.customerId}/profile`, {
       fullName: accountForm.value.fullName.trim(),
       phone: accountForm.value.phone.trim(),
       email: accountForm.value.email.trim(),
-      address: accountForm.value.address.trim()
+      address: accountForm.value.address.trim(),
+      gender: accountProfile.value.gender,
+      dateOfBirth: dobString
     })
     setCurrentCustomer(res.data)
     accountEditing.value = { email: false, phone: false }
     accountMessage.value = 'Đã lưu thông tin tài khoản.'
+    showNotice('Lưu thông tin thành công.')
   } catch (error) {
     accountMessage.value = error.response?.data?.message || 'Không lưu được thông tin.'
   }
+}
+
+const passwordForm = ref({ currentPassword: '', newPassword: '', confirmPassword: '' })
+const passwordMessage = ref({ type: '', text: '' })
+
+function changePassword() {
+  passwordMessage.value = { type: '', text: '' }
+  const phone = currentUser.value?.phone
+  if (!phone) return
+
+  if (!verifyDemoPassword(phone, passwordForm.value.currentPassword)) {
+    passwordMessage.value = { type: 'error', text: 'Mật khẩu hiện tại không đúng.' }
+    return
+  }
+
+  if (!passwordForm.value.newPassword) {
+    passwordMessage.value = { type: 'error', text: 'Vui lòng nhập mật khẩu mới.' }
+    return
+  }
+
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
+    passwordMessage.value = { type: 'error', text: 'Mật khẩu xác nhận không khớp.' }
+    return
+  }
+
+  saveDemoPassword(phone, passwordForm.value.newPassword)
+  passwordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' }
+  passwordMessage.value = { type: 'success', text: 'Đổi mật khẩu thành công.' }
+  showNotice('Đã đổi mật khẩu.')
 }
 
 function openStaffAuth() {
@@ -1377,7 +1569,13 @@ onMounted(async () => {
         Đăng nhập
       </button>
       <div v-else class="user-chip">
-        <button type="button" @click="openPage('account')">{{ currentUser.fullName }}</button>
+        <button type="button" @click="openPage('account')" style="display: flex; align-items: center; gap: 8px;">
+          <span style="width: 30px; height: 30px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: #f0f0f0; font-size: 14px; font-weight: 600; color: #555; flex-shrink: 0;">
+            <img v-if="avatarUrl" :src="avatarUrl" style="width: 100%; height: 100%; object-fit: cover;" />
+            <span v-else>{{ (currentUser.fullName || '?')[0].toUpperCase() }}</span>
+          </span>
+          {{ currentUser.fullName }}
+        </button>
         <button type="button" @click="logoutCustomer">Thoát</button>
       </div>
     </header>
@@ -1669,34 +1867,43 @@ onMounted(async () => {
 
     <main v-else-if="activePage === 'account'" class="account-page">
       <aside class="account-sidebar">
-        <button class="account-side-row" type="button">
-          <span class="side-icon alert-icon">▯</span>
-          <b>Thông Báo</b>
-        </button>
-
         <div class="account-side-group">
           <button class="account-side-row active" type="button">
-            <span class="side-icon user-icon">♙</span>
+            <span class="side-icon user-icon" style="width: 36px; height: 36px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: #f0f0f0; flex-shrink: 0;">
+              <img v-if="avatarUrl" :src="avatarUrl" style="width: 100%; height: 100%; object-fit: cover;" />
+              <span v-else style="font-size: 18px;">&#9817;</span>
+            </span>
             <b>Tài Khoản Của Tôi</b>
           </button>
-          <button class="account-sub active" type="button">Hồ Sơ</button>
-          <button class="account-sub" type="button">Ngân Hàng</button>
-          <button class="account-sub" type="button">Địa Chỉ</button>
-          <button class="account-sub" type="button">Đổi Mật Khẩu</button>
-          <button class="account-sub" type="button">Cài Đặt Thông Báo</button>
-          <button class="account-sub" type="button">Những Thiết Lập Riêng Tư</button>
-          <button class="account-sub" type="button">Thông Tin Cá Nhân</button>
+          <button :class="['account-sub', { active: activeAccountTab === 'profile' }]" type="button" @click="activeAccountTab = 'profile'">Hồ Sơ</button>
+          <button :class="['account-sub', { active: activeAccountTab === 'address' }]" type="button" @click="activeAccountTab = 'address'">Địa Chỉ</button>
+          <button :class="['account-sub', { active: activeAccountTab === 'password' }]" type="button" @click="activeAccountTab = 'password'">Đổi Mật Khẩu</button>
+          <button :class="['account-sub', { active: activeAccountTab === 'privacy' }]" type="button" @click="activeAccountTab = 'privacy'">Những Thiết Lập Riêng Tư</button>
         </div>
 
       </aside>
 
       <section class="account-profile-card">
-        <header class="profile-heading">
+        <header v-if="activeAccountTab === 'profile'" class="profile-heading">
           <h1>Hồ Sơ Của Tôi</h1>
           <p>Quản lý thông tin hồ sơ để bảo mật tài khoản</p>
         </header>
+        <header v-else-if="activeAccountTab === 'address'" class="profile-heading" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h1>Địa Chỉ Của Tôi</h1>
+            <p>Quản lý địa chỉ nhận hàng</p>
+          </div>
+          <button class="primary-btn" type="button" @click="openAddressModal" style="background-color: #ee4d2d; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; box-shadow: 0 4px 10px rgba(238, 77, 45, 0.3);">+ Thêm địa chỉ mới</button>
+        </header>
+        <header v-else-if="activeAccountTab === 'password'" class="profile-heading">
+          <h1>Đổi Mật Khẩu</h1>
+          <p>Bảo mật tài khoản bằng cách thay đổi mật khẩu thường xuyên</p>
+        </header>
+        <header v-else-if="activeAccountTab === 'privacy'" class="profile-heading">
+          <h1>Những thiết lập riêng tư</h1>
+        </header>
 
-        <div class="account-summary-grid">
+        <div v-if="activeAccountTab === 'profile'" class="account-summary-grid">
           <article :class="['member-card', currentMemberTier.className]">
             <span>Hạng thành viên</span>
             <div>
@@ -1725,7 +1932,7 @@ onMounted(async () => {
           </article>
         </div>
 
-        <div v-if="walletTransactions.length" class="wallet-history">
+        <div v-if="activeAccountTab === 'profile' && walletTransactions.length" class="wallet-history">
           <h3>Lịch sử giao dịch ví</h3>
           <div v-for="transaction in walletTransactions.slice(0, 4)" :key="transaction.id" class="wallet-transaction">
             <span>{{ transaction.note }}</span>
@@ -1734,7 +1941,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="profile-content">
+        <div v-if="activeAccountTab === 'profile'" class="profile-content">
           <form class="profile-form" @submit.prevent="saveAccount">
             <div class="profile-row readonly">
               <label>Tên đăng nhập</label>
@@ -1796,12 +2003,6 @@ onMounted(async () => {
                 </select>
               </div>
             </div>
-
-            <div class="profile-row address-row">
-              <label>Địa chỉ</label>
-              <textarea v-model="accountForm.address" rows="3"></textarea>
-            </div>
-
             <div class="profile-actions">
               <button class="profile-save-btn" type="submit">Lưu</button>
               <p v-if="accountMessage">{{ accountMessage }}</p>
@@ -1809,13 +2010,71 @@ onMounted(async () => {
           </form>
 
           <aside class="avatar-panel">
-            <div class="avatar-preview">
-              <span>♙</span>
+            <div class="avatar-preview" style="position: relative; overflow: hidden;">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="Ảnh đại diện" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
+              <span v-else style="font-size: 48px; color: #ccc;">{{ (currentUser?.fullName || '?')[0].toUpperCase() }}</span>
             </div>
-            <button type="button">Chọn Ảnh</button>
+            <label for="avatar-file-input" style="min-width: 142px; min-height: 54px; border: 1px solid #d1d5db; background: #fff; color: #374151; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">
+              Chọn Ảnh
+            </label>
+            <input id="avatar-file-input" type="file" accept="image/jpeg,image/png" style="display: none;" @change="selectAvatar" />
             <p>Dung lượng file tối đa 1 MB</p>
             <p>Định dạng: .JPEG, .PNG</p>
           </aside>
+        </div>
+
+        <div v-else-if="activeAccountTab === 'address'" class="profile-content" style="grid-template-columns: 1fr; gap: 0; padding-top: 16px;">
+          <div class="address-list">
+            <div v-if="parsedAddresses.length === 0" class="empty-address" style="text-align: center; padding: 40px; color: #888;">
+              Bạn chưa có địa chỉ nào.
+            </div>
+            <div v-for="(addr, index) in parsedAddresses" :key="index" class="address-item" style="border-bottom: 1px solid #eee; padding: 16px 0; display: flex; justify-content: space-between; width: 100%;">
+              <div class="address-info" style="flex: 1;">
+                <div style="margin-bottom: 4px;">
+                  <b style="font-size: 1rem;">{{ addr.fullName }}</b> <span style="color: #666; margin-left: 8px;">| {{ addr.phone }}</span>
+                </div>
+                <p style="color: #555; margin: 4px 0; font-size: 0.9rem;">{{ addr.street }}</p>
+                <p style="color: #555; margin: 4px 0; font-size: 0.9rem;">{{ addr.province }}</p>
+                <span v-if="addr.isDefault" class="status-pill active" style="margin-top: 8px; font-size: 0.75rem; border: 1px solid #ee4d2d; color: #ee4d2d; background: transparent;">Mặc định</span>
+                <span v-if="addr.type" class="status-pill" style="margin-top: 8px; font-size: 0.75rem; margin-left: 8px; border: 1px solid #888; color: #888; background: transparent;">{{ addr.type }}</span>
+              </div>
+              <div class="address-actions" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 8px;">
+                <div style="display: flex; gap: 16px;">
+                  <button type="button" @click="editAddress(index)" style="color: #0056b3; background: none; border: none; cursor: pointer;">Cập nhật</button>
+                  <button type="button" @click="deleteAddress(index)" style="color: #0056b3; background: none; border: none; cursor: pointer;">Xóa</button>
+                </div>
+                <button v-if="!addr.isDefault" type="button" @click="addressForm = { ...addr, isDefault: true }; editingAddressIndex = index; submitAddress()" style="background: none; border: 1px solid #ccc; padding: 4px 8px; cursor: pointer; border-radius: 4px; font-size: 0.8rem;">Thiết lập mặc định</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="activeAccountTab === 'password'" class="profile-content">
+          <form class="profile-form" @submit.prevent="changePassword">
+            <div class="profile-row">
+              <label>Mật khẩu hiện tại</label>
+              <input v-model="passwordForm.currentPassword" type="password" placeholder="Nhập mật khẩu hiện tại" />
+            </div>
+            <div class="profile-row">
+              <label>Mật khẩu mới</label>
+              <input v-model="passwordForm.newPassword" type="password" placeholder="Mật khẩu từ 4 ký tự" />
+            </div>
+            <div class="profile-row">
+              <label>Xác nhận mật khẩu</label>
+              <input v-model="passwordForm.confirmPassword" type="password" placeholder="Nhập lại mật khẩu mới" />
+            </div>
+            <div class="profile-actions">
+              <button class="profile-save-btn" type="submit">Đổi Mật Khẩu</button>
+              <p v-if="passwordMessage.text" :class="passwordMessage.type === 'error' ? 'error-text' : 'success-text'">{{ passwordMessage.text }}</p>
+            </div>
+          </form>
+        </div>
+
+        <div v-else-if="activeAccountTab === 'privacy'" class="profile-content" style="padding-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 24px 0; border-top: 1px solid #eee;">
+            <span style="font-size: 1rem; color: #333;">Yêu cầu xóa tài khoản</span>
+            <button type="button" @click="requestAccountDeletion" style="background: #ee4d2d; color: #fff; border: none; padding: 8px 24px; border-radius: 4px; font-size: 0.9rem; cursor: pointer;">Xóa bỏ</button>
+          </div>
         </div>
       </section>
     </main>
@@ -2077,6 +2336,56 @@ onMounted(async () => {
           </button>
         </div>
         <p v-if="staffError" class="error-text">{{ staffError }}</p>
+      </section>
+    </div>
+
+    <div v-if="showAddressModal" class="modal-backdrop" @click.self="closeAddressModal">
+      <section class="modal-card" style="max-width: 600px;">
+        <h2 style="font-size: 1.5rem; font-weight: 500; margin-bottom: 24px;">Địa chỉ mới</h2>
+        <form @submit.prevent="submitAddress" style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <input v-model="addressForm.fullName" type="text" placeholder="Họ và tên" required style="padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem;" />
+            <input v-model="addressForm.phone" type="text" placeholder="Số điện thoại" required style="padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem;" />
+          </div>
+          
+          <select v-model="addressForm.province" required style="padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; width: 100%; appearance: none; background: #fff url('data:image/svg+xml;utf8,<svg fill=%22black%22 height=%2224%22 viewBox=%220 0 24 24%22 width=%2224%22 xmlns=%22http://www.w3.org/2000/svg%22><path d=%22M7 10l5 5 5-5z%22/><path d=%22M0 0h24v24H0z%22 fill=%22none%22/></svg>') no-repeat right 8px center;">
+            <option value="" disabled>Tỉnh/Thành Phố, Quận/Huyện</option>
+            <option value="Hà Nội">Hà Nội</option>
+            <option value="Hồ Chí Minh">Hồ Chí Minh</option>
+            <option value="Đà Nẵng">Đà Nẵng</option>
+            <option value="Hải Phòng">Hải Phòng</option>
+            <option value="Cần Thơ">Cần Thơ</option>
+            <option value="Bình Dương">Bình Dương</option>
+            <option value="Đồng Nai">Đồng Nai</option>
+          </select>
+          
+          <textarea v-model="addressForm.street" placeholder="Địa chỉ cụ thể" rows="3" required style="padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; width: 100%; resize: vertical;"></textarea>
+          
+          <div style="background: #f8f9fa; border: 1px dashed #ddd; border-radius: 4px; padding: 40px 0; text-align: center; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; opacity: 0.05; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #000 10px, #000 20px);"></div>
+            <button type="button" style="background: #fff; border: 1px solid #eee; padding: 8px 16px; border-radius: 4px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; position: relative; z-index: 1; color: #666; font-size: 0.9rem;">
+              <span style="font-size: 1.2rem;">+</span> Thêm vị trí
+            </button>
+          </div>
+          
+          <div>
+            <label style="display: block; margin-bottom: 8px; color: #555;">Loại địa chỉ:</label>
+            <div style="display: flex; gap: 16px;">
+              <button type="button" :style="{ padding: '8px 16px', border: addressForm.type === 'Nhà Riêng' ? '1px solid #ee4d2d' : '1px solid #ddd', background: '#fff', color: addressForm.type === 'Nhà Riêng' ? '#ee4d2d' : '#333', borderRadius: '4px', cursor: 'pointer' }" @click="addressForm.type = 'Nhà Riêng'">Nhà Riêng</button>
+              <button type="button" :style="{ padding: '8px 16px', border: addressForm.type === 'Văn Phòng' ? '1px solid #ee4d2d' : '1px solid #ddd', background: '#fff', color: addressForm.type === 'Văn Phòng' ? '#ee4d2d' : '#333', borderRadius: '4px', cursor: 'pointer' }" @click="addressForm.type = 'Văn Phòng'">Văn Phòng</button>
+            </div>
+          </div>
+          
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; color: #555;">
+            <input type="checkbox" v-model="addressForm.isDefault" :disabled="parsedAddresses.length === 0" style="width: 18px; height: 18px; accent-color: #ee4d2d;" />
+            Đặt làm địa chỉ mặc định
+          </label>
+          
+          <div style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 16px;">
+            <button type="button" @click="closeAddressModal" style="padding: 10px 24px; background: none; border: none; cursor: pointer; font-size: 1rem; color: #333;">Trở Lại</button>
+            <button type="submit" style="padding: 10px 24px; background: #ee4d2d; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; min-width: 120px;">Hoàn thành</button>
+          </div>
+        </form>
       </section>
     </div>
   </div>

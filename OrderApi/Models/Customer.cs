@@ -32,6 +32,11 @@ namespace OrderApi.Models
         [StringLength(500)]
         public string Address { get; set; } = "";
 
+        [StringLength(20)]
+        public string Gender { get; set; } = "";
+
+        public DateTime? DateOfBirth { get; set; }
+
         [Range(0, double.MaxValue)]
         public decimal TotalSpent { get; set; } = 0;
 

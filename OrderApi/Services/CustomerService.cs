@@ -146,6 +146,8 @@ namespace OrderApi.Services
             customer.Phone = newPhone;
             customer.Email = dto.Email;
             customer.Address = dto.Address;
+            customer.Gender = dto.Gender ?? string.Empty;
+            customer.DateOfBirth = dto.DateOfBirth;
             customer.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
 
@@ -204,6 +206,8 @@ namespace OrderApi.Services
                 Phone = customer.Phone,
                 Email = customer.Email,
                 Address = customer.Address,
+                Gender = customer.Gender,
+                DateOfBirth = customer.DateOfBirth,
                 TotalSpent = customer.TotalSpent,
                 CurrentDebt = customer.CurrentDebt,
                 Status = customer.Status.ToString(),

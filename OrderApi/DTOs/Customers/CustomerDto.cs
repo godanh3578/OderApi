@@ -24,6 +24,8 @@ namespace OrderApi.DTOs.Customers
         public string FullName { get; set; } = "";
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
+        public string Gender { get; set; } = "";
+        public DateTime? DateOfBirth { get; set; }
     }
 
     public class CustomerDto
@@ -34,6 +36,8 @@ namespace OrderApi.DTOs.Customers
         public string Phone { get; set; } = "";
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
+        public string Gender { get; set; } = "";
+        public DateTime? DateOfBirth { get; set; }
         public decimal TotalSpent { get; set; }
         public decimal CurrentDebt { get; set; }
         public string Status { get; set; } = "";
