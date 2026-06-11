@@ -98,6 +98,7 @@ const authBusy = ref(false)
 const authError = ref('')
 const loginForm = ref({ phone: '', password: '' })
 const registerForm = ref({ fullName: '', phone: '', email: '', address: '', password: '' })
+const showUserMenu = ref(false)
 
 const showStaffModal = ref(false)
 const staffUser = ref(null)
@@ -642,7 +643,7 @@ function showNotice(message, type = 'ok') {
   }, 3200)
 }
 
-function openPage(page) {
+function openPage(page, tab) {
   if (['cart', 'myOrders', 'account'].includes(page) && !currentUser.value && page !== 'cart') {
     openAuth('login')
     return
@@ -653,7 +654,9 @@ function openPage(page) {
     return
   }
 
-  router.push(pagePaths[page] || '/')
+  const target = { path: pagePaths[page] || '/' }
+  if (tab) target.query = { tab }
+  router.push(target)
 }
 
 function scrollToCatalog() {
@@ -1528,12 +1531,20 @@ watch(activePage, async page => {
   }
   if (page === 'account') {
     initAccountForm()
+    const tab = String(route.query.tab || 'profile')
+    activeAccountTab.value = ['profile', 'address', 'password', 'privacy', 'wallet'].includes(tab) ? tab : 'profile'
   }
   if (staffPages.includes(page)) {
     if (!staffUser.value) openStaffAuth()
     else await loadStaffData()
   }
 }, { immediate: false })
+
+watch(() => route.query.tab, tab => {
+  if (activePage.value === 'account' && tab) {
+    activeAccountTab.value = ['profile', 'address', 'password', 'privacy', 'wallet'].includes(String(tab)) ? String(tab) : 'profile'
+  }
+})
 
 onMounted(async () => {
   const token = getStaffToken()
@@ -1609,15 +1620,32 @@ onMounted(async () => {
       <button v-if="!currentUser" class="login-button" type="button" @click="openAuth('login')">
         Đăng nhập
       </button>
-      <div v-else class="user-chip">
-        <button type="button" @click="openPage('account')" style="display: flex; align-items: center; gap: 8px;">
-          <span style="width: 30px; height: 30px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: #f0f0f0; font-size: 14px; font-weight: 600; color: #555; flex-shrink: 0;">
+      <div v-else class="user-chip" v-click-outside="() => showUserMenu = false" @mouseenter="showUserMenu = true" @mouseleave="showUserMenu = false">
+        <button type="button" class="user-chip-btn">
+          <span class="user-avatar-sm">
             <img v-if="avatarUrl" :src="avatarUrl" style="width: 100%; height: 100%; object-fit: cover;" />
             <span v-else>{{ (currentUser.fullName || '?')[0].toUpperCase() }}</span>
           </span>
-          {{ currentUser.fullName }}
+          <span class="user-chip-name">{{ currentUser.fullName }}</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="transition: transform 0.2s;" :style="showUserMenu ? 'transform:rotate(180deg)' : ''">
+            <path d="M2 4l4 4 4-4" stroke="#666" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </button>
-        <button type="button" @click="logoutCustomer">Thoát</button>
+
+        <div v-if="showUserMenu" class="user-dropdown">
+          <button class="udrop-item" type="button" @click="openPage('account', 'profile'); showUserMenu = false">
+            Tài Khoản Của Tôi
+          </button>
+          <button class="udrop-item" type="button" @click="openPage('account', 'wallet'); showUserMenu = false">
+            Ví RetailERP
+          </button>
+          <button class="udrop-item" type="button" @click="openPage('myOrders'); showUserMenu = false">
+            Đơn Mua
+          </button>
+          <button class="udrop-item danger" type="button" @click="logoutCustomer(); showUserMenu = false">
+            Đăng Xuất
+          </button>
+        </div>
       </div>
     </header>
 
@@ -1874,6 +1902,12 @@ onMounted(async () => {
         <span>Lịch sử</span>
         <h1>Đơn mua của tôi</h1>
       </div>
+      <div class="account-summary-grid">
+        <article class="debt-card">
+          <span>Công nợ hiện tại</span>
+          <b>{{ formatMoney(currentUser?.currentDebt || 0) }}</b>
+        </article>
+      </div>
       <section class="panel">
         <p v-if="myOrdersLoading" class="soft-alert">Đang tải đơn hàng...</p>
         <div v-else-if="myOrders.length === 0" class="empty-state compact">
@@ -1928,6 +1962,7 @@ onMounted(async () => {
             <b>Tài Khoản Của Tôi</b>
           </button>
           <button :class="['account-sub', { active: activeAccountTab === 'profile' }]" type="button" @click="activeAccountTab = 'profile'">Hồ Sơ</button>
+          <button :class="['account-sub', { active: activeAccountTab === 'wallet' }]" type="button" @click="activeAccountTab = 'wallet'">Ví RetailERP</button>
           <button :class="['account-sub', { active: activeAccountTab === 'address' }]" type="button" @click="activeAccountTab = 'address'">Địa Chỉ</button>
           <button :class="['account-sub', { active: activeAccountTab === 'password' }]" type="button" @click="activeAccountTab = 'password'">Đổi Mật Khẩu</button>
           <button :class="['account-sub', { active: activeAccountTab === 'privacy' }]" type="button" @click="activeAccountTab = 'privacy'">Những Thiết Lập Riêng Tư</button>
@@ -1954,44 +1989,6 @@ onMounted(async () => {
         <header v-else-if="activeAccountTab === 'privacy'" class="profile-heading">
           <h1>Những thiết lập riêng tư</h1>
         </header>
-
-        <div v-if="activeAccountTab === 'profile'" class="account-summary-grid">
-          <article :class="['member-card', currentMemberTier.className]">
-            <span>Hạng thành viên</span>
-            <div>
-              <b>{{ currentMemberTier.name }}</b>
-              <em>{{ currentMemberTier.badge }}</em>
-            </div>
-            <p>Ưu đãi tự động {{ currentMemberTier.rate }}% khi thanh toán.</p>
-            <div class="tier-progress"><i :style="{ width: tierProgressPercent + '%' }"></i></div>
-            <small v-if="nextMemberTier">Còn {{ formatMoney(nextMemberTier.minSpent - (currentUser?.totalSpent || 0)) }} để lên hạng {{ nextMemberTier.name }}</small>
-            <small v-else>Bạn đang ở hạng cao nhất.</small>
-          </article>
-
-          <article class="wallet-card">
-            <span>Ví RetailERP</span>
-            <b>{{ formatMoney(walletBalance) }}</b>
-            <div class="wallet-topup">
-              <input v-model.number="walletTopUpAmount" type="number" min="0" />
-              <button type="button" @click="topUpWallet">Nạp ví</button>
-            </div>
-          </article>
-
-          <article class="debt-card">
-            <span>Công nợ hiện tại</span>
-            <b>{{ formatMoney(currentUser?.currentDebt || 0) }}</b>
-            <p>Công nợ phát sinh khi thanh toán một phần hoặc ví không đủ số dư.</p>
-          </article>
-        </div>
-
-        <div v-if="activeAccountTab === 'profile' && walletTransactions.length" class="wallet-history">
-          <h3>Lịch sử giao dịch ví</h3>
-          <div v-for="transaction in walletTransactions.slice(0, 4)" :key="transaction.id" class="wallet-transaction">
-            <span>{{ transaction.note }}</span>
-            <b :class="{ minus: transaction.amount < 0 }">{{ formatMoney(transaction.amount) }}</b>
-            <small>{{ formatDateTime(transaction.createdAt) }}</small>
-          </div>
-        </div>
 
         <div v-if="activeAccountTab === 'profile'" class="profile-content">
           <form class="profile-form" @submit.prevent="saveAccount">
@@ -2066,13 +2063,49 @@ onMounted(async () => {
               <img v-if="avatarUrl" :src="avatarUrl" alt="Ảnh đại diện" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
               <span v-else style="font-size: 48px; color: #ccc;">{{ (currentUser?.fullName || '?')[0].toUpperCase() }}</span>
             </div>
-            <label for="avatar-file-input" style="min-width: 142px; min-height: 54px; border: 1px solid #d1d5db; background: #fff; color: #374151; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">
-              Chọn Ảnh
-            </label>
-            <input id="avatar-file-input" type="file" accept="image/jpeg,image/png" style="display: none;" @change="selectAvatar" />
-            <p>Dung lượng file tối đa 1 MB</p>
-            <p>Định dạng: .JPEG, .PNG</p>
+            <label for="avatar-file-input" style="min-width: 142px; min-height: 54px; border: 1px solid #d1d5db; background: #fff; color: #374151; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">Chọn ảnh</label>
           </aside>
+        </div>
+
+        <div v-if="activeAccountTab === 'wallet'" class="account-summary-grid">
+          <article :class="['member-card', currentMemberTier.className]">
+            <span>Hạng thành viên</span>
+            <div>
+              <b>{{ currentMemberTier.name }}</b>
+              <em>{{ currentMemberTier.badge }}</em>
+            </div>
+            <p>Ưu đãi tự động {{ currentMemberTier.rate }}% khi thanh toán.</p>
+            <div class="tier-progress"><i :style="{ width: tierProgressPercent + '%' }"></i></div>
+            <small v-if="nextMemberTier">Còn {{ formatMoney(nextMemberTier.minSpent - (currentUser?.totalSpent || 0)) }} để lên hạng {{ nextMemberTier.name }}</small>
+            <small v-else>Bạn đang ở hạng cao nhất.</small>
+          </article>
+          <article class="wallet-card">
+            <span>Ví RetailERP</span>
+            <b>{{ formatMoney(walletBalance) }}</b>
+            <div class="wallet-topup">
+              <input v-model.number="walletTopUpAmount" type="number" min="0" placeholder="Nhập số tiền" />
+              <button type="button" @click="topUpWallet">Nạp ví</button>
+            </div>
+          </article>
+          <article class="debt-card">
+            <span>Công nợ hiện tại</span>
+            <b>{{ formatMoney(currentUser?.currentDebt || 0) }}</b>
+            <p>Công nợ phát sinh khi thanh toán một phần hoặc ví không đủ số dư.</p>
+          </article>
+        </div>
+
+        <div v-if="activeAccountTab === 'wallet' && walletTransactions.length" class="wallet-history">
+          <h3>Lịch sử giao dịch ví</h3>
+          <div v-for="transaction in walletTransactions.slice(0, 4)" :key="transaction.id" class="wallet-transaction">
+            <span>{{ transaction.note }}</span>
+            <b :class="{ minus: transaction.amount < 0 }">{{ formatMoney(transaction.amount) }}</b>
+            <small>{{ formatDateTime(transaction.createdAt) }}</small>
+          </div>
+        </div>
+
+        <div v-if="activeAccountTab === 'wallet' && !walletTransactions.length" class="wallet-history">
+          <h3>Lịch sử giao dịch ví</h3>
+          <p>Chưa có giao dịch ví.</p>
         </div>
 
         <div v-else-if="activeAccountTab === 'address'" class="profile-content" style="grid-template-columns: 1fr; gap: 0; padding-top: 16px;">
