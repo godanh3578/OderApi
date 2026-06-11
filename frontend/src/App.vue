@@ -777,6 +777,20 @@ function initCheckoutShipping() {
   if (!checkout.value.depositAmount) checkout.value.depositAmount = Math.round(finalAmount.value * 0.3)
 }
 
+function resetCheckoutShipping() {
+  checkoutShipping.value = {
+    fullName: '',
+    phone: '',
+    address: ''
+  }
+  checkout.value = {
+    voucher: 'NONE',
+    paymentMethod: 'Cash',
+    depositAmount: 0
+  }
+  checkoutMessage.value = ''
+}
+
 function openAuth(mode = 'login') {
   authMode.value = mode
   authError.value = ''
@@ -914,6 +928,7 @@ function logoutCustomer() {
   avatarUrl.value = ''
   saveCustomerUser(null)
   myOrders.value = []
+  resetCheckoutShipping()
   showNotice('Đã đăng xuất.')
   if (['myOrders', 'account'].includes(activePage.value)) openPage('shop')
 }
@@ -1771,19 +1786,19 @@ onMounted(async () => {
         <div class="checkout-fields">
           <label>
             Người nhận
-            <input v-model="checkoutShipping.fullName" type="text" placeholder="Họ tên người nhận" />
+            <input v-model="checkoutShipping.fullName" type="text" placeholder="Họ tên người nhận" :disabled="!currentUser" />
           </label>
           <label>
             Số điện thoại
-            <input v-model="checkoutShipping.phone" type="text" placeholder="Số điện thoại" />
+            <input v-model="checkoutShipping.phone" type="text" placeholder="Số điện thoại" :disabled="!currentUser" />
           </label>
           <label>
             Địa chỉ nhận hàng
-            <textarea v-model="checkoutShipping.address" rows="3" placeholder="Địa chỉ giao hàng"></textarea>
+            <textarea v-model="checkoutShipping.address" rows="3" placeholder="Địa chỉ giao hàng" :disabled="!currentUser"></textarea>
           </label>
           <label>
             Mã giảm giá
-            <select v-model="checkout.voucher">
+            <select v-model="checkout.voucher" :disabled="!currentUser">
               <option v-for="voucher in vouchers" :key="voucher.code" :value="voucher.code" :disabled="!voucherAvailable(voucher)">
                 {{ voucher.label }}
               </option>
@@ -1792,7 +1807,7 @@ onMounted(async () => {
           </label>
           <label>
             Phương thức thanh toán
-            <select v-model="checkout.paymentMethod">
+            <select v-model="checkout.paymentMethod" :disabled="!currentUser">
               <option v-for="method in paymentMethods" :key="method.value" :value="method.value">
                 {{ method.label }}
               </option>
@@ -1801,7 +1816,7 @@ onMounted(async () => {
           </label>
           <label v-if="checkout.paymentMethod === 'Deposit'">
             Số tiền ứng cọc
-            <input v-model.number="checkout.depositAmount" type="number" min="0" :max="finalAmount" />
+            <input v-model.number="checkout.depositAmount" type="number" min="0" :max="finalAmount" :disabled="!currentUser" />
           </label>
         </div>
 
