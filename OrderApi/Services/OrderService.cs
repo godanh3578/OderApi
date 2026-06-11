@@ -191,17 +191,135 @@ namespace OrderApi.Services
 
         public async Task<bool> CancelOrderAsync(int orderId)
         {
-            var order = await _dbContext.Orders.FindAsync(orderId);
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Debt)
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
             if (order == null)
                 return false;
 
             if (order.OrderStatus == OrderStatus.Paid)
                 throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
 
+            if (order.OrderStatus == OrderStatus.Cancelled)
+            {
+                if (order.StockRestoredAt == null)
+                {
+                    await RestoreStockForCancelledOrderAsync(order);
+                    await _dbContext.SaveChangesAsync();
+                }
+
+                return true;
+            }
+
+            if (order.StockRestoredAt == null)
+                await RestoreStockForCancelledOrderAsync(order);
+
+            if (order.Customer != null && order.DebtAmount > 0)
+            {
+                order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - order.DebtAmount);
+                order.Customer.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (order.Debt != null)
+            {
+                order.Debt.PaidAmount = order.Debt.DebtAmount;
+                order.Debt.DebtStatus = DebtStatus.Paid;
+                order.Debt.UpdatedAt = DateTime.UtcNow;
+            }
+
+            order.DebtAmount = 0;
             order.OrderStatus = OrderStatus.Cancelled;
             order.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
             return true;
+        }
+
+        public async Task<bool> CancelOrderForCustomerAsync(int orderId, string phone)
+        {
+            var normalizedPhone = (phone ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(normalizedPhone))
+                return false;
+
+            var order = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Debt)
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
+            if (order == null || order.Customer == null)
+                return false;
+
+            if (!string.Equals(order.Customer.Phone?.Trim(), normalizedPhone, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (order.OrderStatus == OrderStatus.Paid)
+                throw new InvalidOperationException("Không thể hủy đơn đã thanh toán đủ.");
+
+            if (order.OrderStatus == OrderStatus.Cancelled)
+            {
+                if (order.StockRestoredAt == null)
+                {
+                    await RestoreStockForCancelledOrderAsync(order);
+                    await _dbContext.SaveChangesAsync();
+                }
+
+                return true;
+            }
+
+            if (order.StockRestoredAt == null)
+                await RestoreStockForCancelledOrderAsync(order);
+
+            if (order.Customer != null && order.DebtAmount > 0)
+            {
+                order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - order.DebtAmount);
+                order.Customer.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (order.Debt != null)
+            {
+                order.Debt.PaidAmount = order.Debt.DebtAmount;
+                order.Debt.DebtStatus = DebtStatus.Paid;
+                order.Debt.UpdatedAt = DateTime.UtcNow;
+            }
+
+            order.DebtAmount = 0;
+            order.OrderStatus = OrderStatus.Cancelled;
+            order.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+
+        private async Task RestoreStockForCancelledOrderAsync(Order order)
+        {
+            foreach (var item in order.Items)
+            {
+                var stock = await _dbContext.ProductStockCaches
+                    .FirstOrDefaultAsync(p => p.ProductId == item.ProductId);
+
+                if (stock == null)
+                {
+                    stock = new ProductStockCache
+                    {
+                        ProductId = item.ProductId,
+                        ProductCode = item.ProductCode,
+                        ProductName = item.ProductName,
+                        SellingPrice = item.UnitPrice
+                    };
+                    _dbContext.ProductStockCaches.Add(stock);
+                }
+
+                stock.QuantityAvailable += item.Quantity;
+                stock.StockStatus = stock.QuantityAvailable <= 0
+                    ? StockStatus.OutOfStock
+                    : stock.QuantityAvailable <= 5
+                        ? StockStatus.LowStock
+                        : StockStatus.InStock;
+                stock.IsDeleted = false;
+                stock.LastUpdatedAt = DateTime.UtcNow;
+            }
+
+            order.StockRestoredAt = DateTime.UtcNow;
         }
 
         public async Task<bool> DeleteOrderAsync(int orderId)

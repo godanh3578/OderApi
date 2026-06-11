@@ -62,6 +62,8 @@ namespace OrderApi.Models
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        public DateTime? StockRestoredAt { get; set; }
+
         public bool IsDeleted { get; set; } = false;
 
         [Required]

@@ -80,6 +80,8 @@ const productError = ref('')
 const searchText = ref('')
 const activeCategory = ref('')
 const productSort = ref('popular')
+const catalogPage = ref(1)
+const productsPerPage = 12
 
 const cart = ref(loadCustomerCart())
 const currentUser = ref(loadCustomerUser())
@@ -305,6 +307,14 @@ const filteredProducts = computed(() => {
     return productStock(b) - productStock(a) || productName(a).localeCompare(productName(b), 'vi')
   })
 })
+
+const catalogPageCount = computed(() => Math.max(1, Math.ceil(filteredProducts.value.length / productsPerPage)))
+const pagedProducts = computed(() => {
+  const page = Math.min(catalogPage.value, catalogPageCount.value)
+  const start = (page - 1) * productsPerPage
+  return filteredProducts.value.slice(start, start + productsPerPage)
+})
+const catalogPages = computed(() => Array.from({ length: catalogPageCount.value }, (_, index) => index + 1))
 
 const featuredProducts = computed(() => [...products.value]
   .filter(product => productStock(product) > 0)
@@ -1009,7 +1019,7 @@ function upsertLocalOrder(order) {
 
 function mergeOrders(remoteOrders, localOrders) {
   const map = new Map()
-  for (const order of [...localOrders, ...remoteOrders]) {
+  for (const order of [...remoteOrders, ...localOrders]) {
     map.set(order.orderCode || order.orderId || order.id, order)
   }
   return [...map.values()].sort((a, b) => new Date(b.orderDate || 0) - new Date(a.orderDate || 0))
@@ -1442,7 +1452,14 @@ async function cancelOrder(order, staff = false) {
   const id = order.orderId || order.id
   try {
     if (id && !String(id).startsWith('local-') && !order.isLocalDemo) {
-      await api.put(`/api/Orders/${id}/cancel`)
+      if (staff) {
+        await api.put(`/api/Orders/${id}/cancel`)
+      } else {
+        await api.put(`/api/Orders/${id}/customer-cancel`, {
+          phone: currentUser.value?.phone || order.customerPhone || ''
+        })
+      }
+      await loadProducts()
       await loadStaffData()
       await loadMyOrders()
       showNotice('Đã hủy đơn hàng.')
@@ -1455,6 +1472,7 @@ async function cancelOrder(order, staff = false) {
       return
     }
     markOrderCancelled(order)
+    await loadProducts()
     await loadMyOrders()
     if (staff) await loadStaffData()
     showNotice('Đã cập nhật hủy đơn trong dữ liệu demo.')
@@ -1476,6 +1494,14 @@ watch(() => checkout.value.paymentMethod, method => {
   if (method === 'Deposit' && checkout.value.depositAmount === 0) {
     checkout.value.depositAmount = Math.round(finalAmount.value * 0.3)
   }
+})
+
+watch([searchText, activeCategory, productSort], () => {
+  catalogPage.value = 1
+})
+
+watch(catalogPageCount, count => {
+  if (catalogPage.value > count) catalogPage.value = count
 })
 
 watch(activePage, async page => {
@@ -1674,7 +1700,7 @@ onMounted(async () => {
         </div>
 
         <div v-else class="product-grid">
-          <article v-for="product in filteredProducts" :key="productId(product)" class="product-card clickable-card" @click="openProductDetail(product)">
+          <article v-for="product in pagedProducts" :key="productId(product)" class="product-card clickable-card" @click="openProductDetail(product)">
             <div class="product-image">
               <img :src="productImage(product)" alt="" />
               <span>{{ productStock(product) }} còn lại</span>
@@ -1691,6 +1717,17 @@ onMounted(async () => {
               </div>
             </div>
           </article>
+        </div>
+
+        <div v-if="catalogPageCount > 1" class="catalog-pagination" aria-label="Phân trang sản phẩm">
+          <button
+            v-for="page in catalogPages"
+            :key="page"
+            :class="{ active: catalogPage === page }"
+            type="button"
+            :aria-label="`Trang ${page}`"
+            @click="catalogPage = page; scrollToCatalog()"
+          ></button>
         </div>
       </section>
     </main>

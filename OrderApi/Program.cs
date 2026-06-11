@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using OrderApi.Data;
+using OrderApi.Models;
 using OrderApi.Services;
 using System.Text;
 
@@ -102,6 +103,7 @@ try
         END
         """);
     await DbSeeder.SeedAsync(db);
+    await RestoreCancelledOrderStockAsync(db);
 }
 catch (Exception ex)
 {
@@ -120,3 +122,51 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
+static async Task RestoreCancelledOrderStockAsync(OrderDbContext db)
+{
+    var cancelledOrders = await db.Orders
+        .IgnoreQueryFilters()
+        .Include(o => o.Items)
+        .Where(o => o.OrderStatus == OrderStatus.Cancelled && o.StockRestoredAt == null)
+        .ToListAsync();
+
+    if (cancelledOrders.Count == 0)
+        return;
+
+    foreach (var order in cancelledOrders)
+    {
+        foreach (var item in order.Items)
+        {
+            var stock = await db.ProductStockCaches
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(p => p.ProductId == item.ProductId);
+
+            if (stock == null)
+            {
+                stock = new ProductStockCache
+                {
+                    ProductId = item.ProductId,
+                    ProductCode = item.ProductCode,
+                    ProductName = item.ProductName,
+                    SellingPrice = item.UnitPrice
+                };
+                db.ProductStockCaches.Add(stock);
+            }
+
+            stock.QuantityAvailable += item.Quantity;
+            stock.StockStatus = stock.QuantityAvailable <= 0
+                ? StockStatus.OutOfStock
+                : stock.QuantityAvailable <= 5
+                    ? StockStatus.LowStock
+                    : StockStatus.InStock;
+            stock.IsDeleted = false;
+            stock.LastUpdatedAt = DateTime.UtcNow;
+        }
+
+        order.StockRestoredAt = DateTime.UtcNow;
+    }
+
+    await db.SaveChangesAsync();
+    Console.WriteLine($"Restored stock for {cancelledOrders.Count} cancelled order(s).");
+}
