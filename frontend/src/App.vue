@@ -80,6 +80,8 @@ const productError = ref('')
 const searchText = ref('')
 const activeCategory = ref('')
 const productSort = ref('popular')
+const catalogPage = ref(1)
+const productsPerPage = 12
 
 const cart = ref(loadCustomerCart())
 const currentUser = ref(loadCustomerUser())
@@ -205,6 +207,14 @@ const filteredProducts = computed(() => {
     return productStock(b) - productStock(a) || productName(a).localeCompare(productName(b), 'vi')
   })
 })
+
+const catalogPageCount = computed(() => Math.max(1, Math.ceil(filteredProducts.value.length / productsPerPage)))
+const pagedProducts = computed(() => {
+  const page = Math.min(catalogPage.value, catalogPageCount.value)
+  const start = (page - 1) * productsPerPage
+  return filteredProducts.value.slice(start, start + productsPerPage)
+})
+const catalogPages = computed(() => Array.from({ length: catalogPageCount.value }, (_, index) => index + 1))
 
 const featuredProducts = computed(() => [...products.value]
   .filter(product => productStock(product) > 0)
@@ -1286,6 +1296,14 @@ watch(() => checkout.value.paymentMethod, method => {
   }
 })
 
+watch([searchText, activeCategory, productSort], () => {
+  catalogPage.value = 1
+})
+
+watch(catalogPageCount, count => {
+  if (catalogPage.value > count) catalogPage.value = count
+})
+
 watch(activePage, async page => {
   if (page === 'shop' || page === 'cart') {
     await loadProducts()
@@ -1476,7 +1494,7 @@ onMounted(async () => {
         </div>
 
         <div v-else class="product-grid">
-          <article v-for="product in filteredProducts" :key="productId(product)" class="product-card clickable-card" @click="openProductDetail(product)">
+          <article v-for="product in pagedProducts" :key="productId(product)" class="product-card clickable-card" @click="openProductDetail(product)">
             <div class="product-image">
               <img :src="productImage(product)" alt="" />
               <span>{{ productStock(product) }} còn lại</span>
@@ -1493,6 +1511,17 @@ onMounted(async () => {
               </div>
             </div>
           </article>
+        </div>
+
+        <div v-if="catalogPageCount > 1" class="catalog-pagination" aria-label="Phân trang sản phẩm">
+          <button
+            v-for="page in catalogPages"
+            :key="page"
+            :class="{ active: catalogPage === page }"
+            type="button"
+            :aria-label="`Trang ${page}`"
+            @click="catalogPage = page; scrollToCatalog()"
+          ></button>
         </div>
       </section>
     </main>
