@@ -295,6 +295,7 @@ namespace OrderApi.Services
             foreach (var item in order.Items)
             {
                 var stock = await _dbContext.ProductStockCaches
+                    .IgnoreQueryFilters()
                     .FirstOrDefaultAsync(p => p.ProductId == item.ProductId);
 
                 if (stock == null)

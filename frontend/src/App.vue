@@ -56,6 +56,7 @@ const demoProducts = [
 ]
 
 const LOCAL_ORDERS_KEY = 'retailerpLocalOrders'
+const LOCAL_STOCK_RESERVES_KEY = 'retailerpLocalStockReserves'
 const WALLET_STATE_KEY = 'retailerpWalletState'
 const ACTIVITY_LOG_KEY = 'retailerpActivityLog'
 
@@ -412,6 +413,10 @@ function productPrice(product) {
   return Number(product.sellingPrice ?? product.price ?? product.unitPrice ?? 0)
 }
 
+function productRawStock(product) {
+  return Math.max(0, Number(product.sourceQuantityAvailable ?? product.quantityAvailable ?? product.stock ?? product.availableStock ?? 0))
+}
+
 function productBaseStock(product) {
   return Math.max(0, Number(product.quantityAvailable ?? product.stock ?? product.availableStock ?? 0))
 }
@@ -422,7 +427,7 @@ function cartQuantityFor(product) {
 }
 
 function productStock(product) {
-  return Math.max(0, productBaseStock(product) - cartQuantityFor(product))
+  return productBaseStock(product)
 }
 
 function productImage(product) {
@@ -431,16 +436,21 @@ function productImage(product) {
 }
 
 function normalizeProduct(product) {
+  const id = productId(product)
+  const rawStock = productRawStock(product)
+  const stock = Math.max(0, rawStock - localReservedStock(id))
+
   return {
     ...product,
-    productId: productId(product),
+    productId: id,
     productCode: productCode(product),
     productName: productName(product),
     categoryName: productCategory(product),
     sellingPrice: productPrice(product),
-    quantityAvailable: productBaseStock(product),
+    sourceQuantityAvailable: rawStock,
+    quantityAvailable: stock,
     manufacturerName: product.manufacturerName || product.supplierName || 'Nhóm kho',
-    stockStatus: product.stockStatus || (productBaseStock(product) > 0 ? 'InStock' : 'OutOfStock')
+    stockStatus: stock <= 0 ? 'OutOfStock' : stock <= 5 ? 'LowStock' : 'InStock'
   }
 }
 
@@ -512,6 +522,56 @@ function readJsonStorage(key, fallback) {
 
 function writeJsonStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
+}
+
+function readLocalStockReserves() {
+  return readJsonStorage(LOCAL_STOCK_RESERVES_KEY, {})
+}
+
+function localReservedStock(id) {
+  const reserves = readLocalStockReserves()
+  return Math.max(0, Number(reserves[String(id)] || 0))
+}
+
+function saveLocalStockReserves(reserves) {
+  writeJsonStorage(LOCAL_STOCK_RESERVES_KEY, reserves)
+}
+
+function isLocalOrder(order) {
+  const id = order?.orderId || order?.id
+  return Boolean(order?.isLocalDemo || (id && String(id).startsWith('local-')))
+}
+
+function refreshProductsFromLocalReserves() {
+  products.value = products.value.map(product => {
+    const id = productId(product)
+    const rawStock = productRawStock(product)
+    const stock = Math.max(0, rawStock - localReservedStock(id))
+    return {
+      ...product,
+      quantityAvailable: stock,
+      stockStatus: stock <= 0 ? 'OutOfStock' : stock <= 5 ? 'LowStock' : 'InStock'
+    }
+  })
+  syncCartStock()
+}
+
+function adjustLocalStockReserves(items = [], direction = 1) {
+  const reserves = readLocalStockReserves()
+
+  for (const item of items) {
+    const id = Number(item.productId)
+    const quantity = Math.max(0, Number(item.quantity || 0))
+    if (!id || quantity <= 0) continue
+
+    const key = String(id)
+    const next = Math.max(0, Number(reserves[key] || 0) + direction * quantity)
+    if (next > 0) reserves[key] = next
+    else delete reserves[key]
+  }
+
+  saveLocalStockReserves(reserves)
+  refreshProductsFromLocalReserves()
 }
 
 function walletKeyFor(user = currentUser.value) {
@@ -1157,10 +1217,11 @@ async function submitCheckout() {
     if (!error.response) {
       const order = createLocalOrder(currentUser.value)
       upsertLocalOrder(order)
+      adjustLocalStockReserves(order.items, 1)
       applyCheckoutSideEffects(order)
       clearCart()
       checkout.value = { voucher: 'NONE', paymentMethod: 'Cash', depositAmount: 0 }
-      await loadMyOrders()
+      await Promise.all([loadProducts(), loadMyOrders()])
       showNotice(`Đã tạo đơn demo local - ${order.orderCode}.`)
       openPage('myOrders')
       return
@@ -1454,6 +1515,10 @@ function markOrderCancelled(order) {
     currentUser.value.currentDebt = Math.max(0, Number(currentUser.value.currentDebt || 0) - orderDebt(order))
     saveCustomerUser(currentUser.value)
     saveDemoCustomer(currentUser.value)
+  }
+
+  if (isLocalOrder(order)) {
+    adjustLocalStockReserves(order.items, -1)
   }
 
   upsertLocalOrder(updated)
