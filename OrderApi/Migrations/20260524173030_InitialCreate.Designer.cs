@@ -24,7 +24,7 @@ namespace OrderApi.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("OrderApi.Models.Customer", b =>
+            modelBuilder.Entity("OrderApi.Models.Customers", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()

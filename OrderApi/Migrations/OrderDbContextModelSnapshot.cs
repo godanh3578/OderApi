@@ -65,7 +65,7 @@ namespace OrderApi.Migrations
 
                     b.HasKey("AuditLogId");
 
-                    b.ToTable("AuditLogs");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Customer", b =>
@@ -132,7 +132,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("CustomerCode")
                         .IsUnique();
 
-                    b.ToTable("Customers");
+                    b.ToTable("Customers", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Debt", b =>
@@ -174,7 +174,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("OrderId")
                         .IsUnique();
 
-                    b.ToTable("Debts");
+                    b.ToTable("Debts", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Order", b =>
@@ -229,9 +229,6 @@ namespace OrderApi.Migrations
                     b.Property<int>("PaymentStatus")
                         .HasColumnType("int");
 
-                    b.Property<DateTime?>("StockRestoredAt")
-                        .HasColumnType("datetime2");
-
                     b.Property<decimal>("TotalAmount")
                         .HasColumnType("decimal(18,2)");
 
@@ -245,7 +242,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("OrderCode")
                         .IsUnique();
 
-                    b.ToTable("Orders");
+                    b.ToTable("Orders", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.OrderDetail", b =>
@@ -322,7 +319,7 @@ namespace OrderApi.Migrations
 
                     b.HasKey("OutboxMessageId");
 
-                    b.ToTable("OutboxMessages");
+                    b.ToTable("OutboxMessages", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Payment", b =>
@@ -368,7 +365,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("PaymentCode")
                         .IsUnique();
 
-                    b.ToTable("Payments");
+                    b.ToTable("Payments", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.ProductStockCache", b =>
@@ -417,7 +414,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("ProductId")
                         .IsUnique();
 
-                    b.ToTable("ProductStockCaches");
+                    b.ToTable("ProductStockCaches", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Return", b =>
@@ -469,7 +466,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("ReturnCode")
                         .IsUnique();
 
-                    b.ToTable("Returns");
+                    b.ToTable("Returns", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.ReturnDetail", b =>
@@ -509,7 +506,7 @@ namespace OrderApi.Migrations
 
                     b.HasIndex("ReturnId");
 
-                    b.ToTable("ReturnDetails");
+                    b.ToTable("ReturnDetails", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.SalesInvoice", b =>
@@ -558,7 +555,7 @@ namespace OrderApi.Migrations
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("SalesInvoices");
+                    b.ToTable("SalesInvoices", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Supplier", b =>
@@ -613,7 +610,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("SupplierCode")
                         .IsUnique();
 
-                    b.ToTable("Suppliers");
+                    b.ToTable("Suppliers", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Debt", b =>

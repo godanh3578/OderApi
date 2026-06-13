@@ -24,7 +24,7 @@ namespace OrderApi.Models
 
         [Required]
         public int CustomerId { get; set; }
-        public Customer? Customer { get; set; }
+        public Customers?  Customer { get; set; }
 
         public DateTime ReturnDate { get; set; } = DateTime.UtcNow;
 

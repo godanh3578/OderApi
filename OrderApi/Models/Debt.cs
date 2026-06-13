@@ -16,7 +16,7 @@ namespace OrderApi.Models
 
         [Required]
         public int CustomerId { get; set; }
-        public Customer? Customer { get; set; }
+        public Customers? Customer { get; set; }
 
         [Required]
         public int OrderId { get; set; }

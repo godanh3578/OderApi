@@ -28,7 +28,7 @@ api.interceptors.request.use((config) => {
   if (staffToken) {
     config.headers.Authorization = `Bearer ${staffToken}`
   }
+  console.log('API request:', config.method, config.url, JSON.stringify(config.data))  // ← thêm dòng này
   return config
 })
-
 export default api

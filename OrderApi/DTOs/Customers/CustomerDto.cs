@@ -24,8 +24,9 @@ namespace OrderApi.DTOs.Customers
         public string FullName { get; set; } = "";
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
-        public string Gender { get; set; } = "";
-        public DateTime? DateOfBirth { get; set; }
+        public string Gender { get; set; } = ""; 
+        public string? DateOfBirth { get; set; } // Giữ là string để nhận từ Frontend
+        public string? AvatarUrl { get; set; }
     }
 
     public class CustomerDto
@@ -37,7 +38,8 @@ namespace OrderApi.DTOs.Customers
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
         public string Gender { get; set; } = "";
-        public DateTime? DateOfBirth { get; set; }
+        public DateOnly? DateOfBirth { get; set; }
+        public string? AvatarUrl { get; set; }
         public decimal TotalSpent { get; set; }
         public decimal CurrentDebt { get; set; }
         public string Status { get; set; } = "";

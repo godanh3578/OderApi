@@ -16,17 +16,17 @@ namespace OrderApi.Services
             _logger = logger;
         }
 
-        public async Task<CustomerDto?> GetCustomerByIdAsync(int customerId)
-        {
-            var customer = await _dbContext.Customers
-                .Include(c => c.Orders)
-                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+        public async Task<CustomerDto> GetCustomerProfileAsync(int customerId)
+    {
+        // Tìm customer trong Database bao gồm cả trường Ngày sinh (DateTime?)
+        var customer = await _dbContext.Customers.FindAsync(customerId);
+    
+         if (customer == null)
+        throw new KeyNotFoundException($"Không tìm thấy khách hàng với ID: {customerId}");
 
-            if (customer == null)
-                return null;
-
-            return MapToDto(customer);
-        }
+    // Trả về dữ liệu đã được map qua hàm MapToDto cực kỳ an toàn
+        return MapToDto(customer);
+    }
 
         public async Task<CustomerDto?> GetCustomerByCodeAsync(string customerCode)
         {
@@ -83,7 +83,7 @@ namespace OrderApi.Services
             if (existing != null)
                 throw new InvalidOperationException($"Customer code {dto.CustomerCode} already exists");
 
-            var customer = new Customer
+            var customer = new Customers
             {
                 CustomerCode = dto.CustomerCode,
                 FullName = dto.FullName,
@@ -123,38 +123,60 @@ namespace OrderApi.Services
             return MapToDto(customer);
         }
 
-        public async Task<CustomerDto> UpdateCustomerProfileAsync(int customerId, UpdateCustomerProfileDto dto)
+      
+     
+   public async Task<CustomerDto> UpdateCustomerProfileAsync(int customerId, UpdateCustomerProfileDto dto)
+{
+    Console.WriteLine($"DateOfBirth received: {dto.DateOfBirth}");
+    var customer = await _dbContext.Customers.FindAsync(customerId);
+    if (customer == null)
+        throw new KeyNotFoundException($"Customer {customerId} not found");
+
+    var newPhone = (dto.Phone ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(newPhone))
+        throw new InvalidOperationException("Số điện thoại không được để trống.");
+
+    if (!string.Equals(customer.Phone, newPhone, StringComparison.Ordinal))
+    {
+        var phoneExists = await _dbContext.Customers
+            .AnyAsync(c => c.CustomerId != customerId && c.Phone == newPhone);
+
+        if (phoneExists)
+            throw new InvalidOperationException("Số điện thoại đã được đăng ký.");
+    }
+
+    customer.FullName = dto.FullName;
+    customer.Phone = newPhone;
+    customer.Email = dto.Email;
+    customer.Address = dto.Address;
+    customer.Gender = dto.Gender ?? string.Empty;
+
+    // Ép kiểu chuỗi string thô từ DTO sang DateTime? cho Entity
+    if (!string.IsNullOrWhiteSpace(dto.DateOfBirth))
         {
-            var customer = await _dbContext.Customers.FindAsync(customerId);
-            if (customer == null)
-                throw new KeyNotFoundException($"Customer {customerId} not found");
-
-            var newPhone = (dto.Phone ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(newPhone))
-                throw new InvalidOperationException("Số điện thoại không được để trống.");
-
-            if (!string.Equals(customer.Phone, newPhone, StringComparison.Ordinal))
-            {
-                var phoneExists = await _dbContext.Customers
-                    .AnyAsync(c => c.CustomerId != customerId && c.Phone == newPhone);
-
-                if (phoneExists)
-                    throw new InvalidOperationException("Số điện thoại đã được đăng ký.");
-            }
-
-            customer.FullName = dto.FullName;
-            customer.Phone = newPhone;
-            customer.Email = dto.Email;
-            customer.Address = dto.Address;
-            customer.Gender = dto.Gender ?? string.Empty;
-            customer.DateOfBirth = dto.DateOfBirth;
-            customer.UpdatedAt = DateTime.UtcNow;
-            await _dbContext.SaveChangesAsync();
-
-            return MapToDto(customer);
+        if (DateTime.TryParse(dto.DateOfBirth, out DateTime parsedDate))
+        {
+            customer.DateOfBirth = DateTime.TryParse(dto.DateOfBirth, out var dob) ? dob : null;
         }
+        else
+        {
+            customer.DateOfBirth = null; 
+        }
+    }
+    else
+    {
+        customer.DateOfBirth = null; 
+    }
 
-        public async Task<bool> DeleteCustomerAsync(int customerId)
+    customer.UpdatedAt = DateTime.UtcNow;
+    
+    // Lưu các thay đổi vào cơ sở dữ liệu
+    await _dbContext.SaveChangesAsync();
+
+    // Trả về kết quả map thông qua hàm MapToDto
+    return MapToDto(customer);
+    }
+           public async Task<bool> DeleteCustomerAsync(int customerId)
         {
             var customer = await _dbContext.Customers.FindAsync(customerId);
             if (customer == null)
@@ -196,24 +218,33 @@ namespace OrderApi.Services
             };
         }
 
-        private CustomerDto MapToDto(Customer customer)
+private CustomerDto MapToDto(Customers customer)
+{
+    return new CustomerDto
+    {
+        CustomerId = customer.CustomerId,
+        CustomerCode = customer.CustomerCode,
+        FullName = customer.FullName,
+        Phone = customer.Phone,
+        Email = customer.Email,
+        Address = customer.Address,
+        Gender = customer.Gender,
+        AvatarUrl = customer.AvatarUrl,
+        // 🛠️ GIẢI PHÁP AN TOÀN: Kiểm tra kỹ lưỡng trước khi bóc tách DateOnly
+        DateOfBirth = (customer.DateOfBirth != null && customer.DateOfBirth != DateTime.MinValue)
+            ? DateOnly.FromDateTime(customer.DateOfBirth.Value)
+            : null,
+            
+        TotalSpent = customer.TotalSpent,
+        CurrentDebt = customer.CurrentDebt,
+        Status = customer.Status.ToString() ?? "Active",
+        CreatedAt = customer.CreatedAt,
+        UpdatedAt = customer.UpdatedAt
+    };
+}
+        public Task<CustomerDto?> GetCustomerByIdAsync(int customerId)
         {
-            return new CustomerDto
-            {
-                CustomerId = customer.CustomerId,
-                CustomerCode = customer.CustomerCode,
-                FullName = customer.FullName,
-                Phone = customer.Phone,
-                Email = customer.Email,
-                Address = customer.Address,
-                Gender = customer.Gender,
-                DateOfBirth = customer.DateOfBirth,
-                TotalSpent = customer.TotalSpent,
-                CurrentDebt = customer.CurrentDebt,
-                Status = customer.Status.ToString(),
-                CreatedAt = customer.CreatedAt,
-                UpdatedAt = customer.UpdatedAt
-            };
+            throw new NotImplementedException();
         }
     }
 }

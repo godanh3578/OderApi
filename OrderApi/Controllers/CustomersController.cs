@@ -37,17 +37,23 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Sales")]
+        [AllowAnonymous] 
         public async Task<IActionResult> GetById(int id)
         {
             var customer = await _customerService.GetCustomerByIdAsync(id);
             if (customer == null) return NotFound();
             return Ok(customer);
         }
-
-        [HttpPost("demo-login")]
+        [HttpGet("{id}/profile")]
+        public async Task<IActionResult> GetProfile(int id)
+        {
+    // Hàm này sẽ vào tận DB lôi dữ liệu mới nhất (đã có ngày sinh) ra trả về
+            var customerDto = await _customerService.GetCustomerProfileAsync(id);
+            return Ok(customerDto);
+        }
+        [HttpPost("Login")]
         [AllowAnonymous]
-        public async Task<IActionResult> DemoLogin([FromBody] CustomerDemoLoginRequest request)
+        public async Task<IActionResult> Login([FromBody] CustomerLoginRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.Phone))
                 return BadRequest(new { message = "Vui lòng nhập số điện thoại." });
@@ -127,6 +133,35 @@ namespace OrderApi.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpPost("{id}/avatar")]
+        [AllowAnonymous]
+    public async Task<IActionResult> UploadAvatar(int id, IFormFile file)
+    {
+    if (file == null || file.Length == 0)
+        return BadRequest(new { message = "Vui lòng chọn ảnh." });
+    var allowed = new[] { "image/jpeg", "image/png", "image/webp" };
+    if (!allowed.Contains(file.ContentType))
+        return BadRequest(new { message = "Chỉ chấp nhận ảnh JPG, PNG, WEBP." });
+
+    var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "avatars");
+    Directory.CreateDirectory(uploadsPath);
+
+    var ext = Path.GetExtension(file.FileName);
+    var fileName = $"avatar_{id}{ext}";
+    var filePath = Path.Combine(uploadsPath, fileName);
+
+    using (var stream = new FileStream(filePath, FileMode.Create))
+        await file.CopyToAsync(stream);
+
+    var avatarUrl = $"/avatars/{fileName}";
+
+    // Lưu URL vào DB
+    var customer = await _context.Customers.FindAsync(id);
+    if (customer == null) return NotFound();
+    customer.AvatarUrl = avatarUrl;
+    await _context.SaveChangesAsync();
+    return Ok(new { avatarUrl, message = "Ảnh đại diện đã được tải lên thành công." });
+}
 
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin,Sales")]
@@ -153,8 +188,10 @@ namespace OrderApi.Controllers
         }
     }
 
-    public class CustomerDemoLoginRequest
+    public class CustomerLoginRequest
     {
         public string Phone { get; set; } = "";
+        public string Password { get; set; } = "";
+
     }
 }

@@ -25,7 +25,7 @@ namespace OrderApi.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("OrderApi.Models.Customer", b =>
+            modelBuilder.Entity("OrderApi.Models.Customers", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -157,7 +157,7 @@ namespace OrderApi.Migrations
 
             modelBuilder.Entity("OrderApi.Models.Order", b =>
                 {
-                    b.HasOne("OrderApi.Models.Customer", "Customer")
+                    b.HasOne("OrderApi.Models.Customers", "Customer")
                         .WithMany("Orders")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -177,7 +177,7 @@ namespace OrderApi.Migrations
                     b.Navigation("Order");
                 });
 
-            modelBuilder.Entity("OrderApi.Models.Customer", b =>
+            modelBuilder.Entity("OrderApi.Models.Customers", b =>
                 {
                     b.Navigation("Orders");
                 });

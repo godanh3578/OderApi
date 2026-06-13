@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const distDir = path.join(__dirname, 'dist')
-const apiTarget = process.env.API_TARGET || 'http://localhost:5002'
+const apiTarget = proce.envss.API_TARGET || 'http://localhost:5002'
 const port = Number(process.env.PORT || 5173)
 
 const mimeTypes = {

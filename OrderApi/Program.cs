@@ -22,6 +22,7 @@ var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnec
     ?.Replace("|DataDirectory|", localDbPath);
 
 builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>{ });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDataProtection()
@@ -116,7 +117,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
+app.UseStaticFiles();
 app.UseCors("DefaultCorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();

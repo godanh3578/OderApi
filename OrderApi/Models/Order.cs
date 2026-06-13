@@ -31,8 +31,8 @@ namespace OrderApi.Models
 
         [Required]
         public int CustomerId { get; set; }
-        public Customer? Customer { get; set; }
-
+        public Customers? Customer { get; set; }
+        
         [Required]
         [StringLength(100)]
         public string CreatedBy { get; set; } = "";

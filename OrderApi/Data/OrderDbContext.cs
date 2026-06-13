@@ -10,7 +10,7 @@ namespace OrderApi.Data
         {
         }
 
-        public DbSet<Customer> Customers { get; set; }
+        public DbSet<Customers> Customers { get; set; }
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderDetail> OrderDetails { get; set; }
         public DbSet<Supplier> Suppliers { get; set; }
@@ -26,14 +26,14 @@ namespace OrderApi.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Customers
-            modelBuilder.Entity<Customer>()
+            modelBuilder.Entity<Customers>()
                 .HasKey(c => c.CustomerId);
 
-            modelBuilder.Entity<Customer>()
+            modelBuilder.Entity<Customers>()
                 .HasIndex(c => c.CustomerCode)
                 .IsUnique();
 
-            modelBuilder.Entity<Customer>()
+            modelBuilder.Entity<Customers>()
                 .HasQueryFilter(c => !c.IsDeleted);
 
             // Suppliers

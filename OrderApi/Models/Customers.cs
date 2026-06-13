@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace OrderApi.Models
 {
@@ -9,8 +10,11 @@ namespace OrderApi.Models
         Blocked
     }
 
-    public class Customer
+    public class Customers
     {
+        [StringLength(500)]
+        public string? AvatarUrl { get; set; }
+
         public int CustomerId { get; set; }
 
         [Required]
@@ -34,7 +38,7 @@ namespace OrderApi.Models
 
         [StringLength(20)]
         public string Gender { get; set; } = "";
-
+        [Column("DateOfBirth")]
         public DateTime? DateOfBirth { get; set; }
 
         [Range(0, double.MaxValue)]

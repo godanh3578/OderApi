@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch , nextTick} from 'vue'
 import { ShoppingBasket } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { getStaffToken, setStaffToken } from './api/client'
+
 import {
   loadCustomerCart,
   loadCustomerUser,
@@ -13,7 +14,7 @@ import {
   saveDemoPassword,
   verifyDemoPassword
 } from './utils/customerStorage'
-
+let demoIdCounter = -1
 const router = useRouter()
 const route = useRoute()
 
@@ -97,7 +98,7 @@ const authMode = ref('login')
 const authBusy = ref(false)
 const authError = ref('')
 const loginForm = ref({ phone: '', password: '' })
-const registerForm = ref({ fullName: '', phone: '', email: '', address: '', password: '' })
+const registerForm = ref({ fullName: '', phone: '', email: '', address: '', password: '' ,gender: 0,dateOfBirth:null})
 const showUserMenu = ref(false)
 
 const showStaffModal = ref(false)
@@ -130,7 +131,7 @@ const orderLookup = ref({
 })
 
 const accountForm = ref({ fullName: '', phone: '', email: '', address: '' })
-const accountProfile = ref({ gender: '', day: '', month: '', year: '' })
+const accountProfile = ref({ gender: '', day: null, month: null, year: null })
 const accountEditing = ref({ email: false, phone: false })
 const accountMessage = ref('')
 const activeAccountTab = ref('profile')
@@ -828,7 +829,7 @@ function setCurrentCustomer(customer) {
 
 function createLocalDemoCustomer(profile) {
   return {
-    customerId: Date.now(),
+    customerId: demoIdCounter--,
     fullName: profile.fullName,
     phone: profile.phone,
     email: profile.email || '',
@@ -850,41 +851,34 @@ async function registerCustomer() {
     authBusy.value = false
     return
   }
-
   try {
+    console.log('registerForm:', JSON.stringify(registerForm.value))
     const res = await api.post('/api/Customers', {
       fullName: registerForm.value.fullName.trim(),
       phone: registerForm.value.phone.trim(),
       email: registerForm.value.email.trim(),
       address: registerForm.value.address.trim(),
       gender: registerForm.value.gender.toString(),
-      dateOfBirth: registerForm.value.dateOfBirth.toISOString().split('T')[0],
+      dateOfBirth: registerForm.value.dateOfBirth  ? new Date(registerForm.value.dateOfBirth).toISOString().split('T')[0]: null,
     })
 
     saveDemoPassword(registerForm.value.phone.trim(), registerForm.value.password)
     setCurrentCustomer(res.data)
-    registerForm.value = { fullName: '', phone: '', email: '', address: '', password: '' }
+    registerForm.value = { fullName: '', phone: '', email: '', address: '', password: '' ,gender: 0}
     closeAuth()
     showNotice('Đăng ký thành công.')
     await loadMyOrders()
-  } catch (error) {
-    const customer = createLocalDemoCustomer({
-      fullName: registerForm.value.fullName.trim(),
-      phone: registerForm.value.phone.trim(),
-      email: registerForm.value.email.trim(),
-      address: registerForm.value.address.trim()
-    })
-    saveDemoPassword(registerForm.value.phone.trim(), registerForm.value.password)
-    setCurrentCustomer(customer)
-    registerForm.value = { fullName: '', phone: '', email: '', address: '', password: '' }
-    closeAuth()
-    showNotice('Đăng ký demo local thành công. Backend chưa lưu được tài khoản này.')
-    await loadMyOrders()
+  } 
+  catch (error) {
+    console.log('Full error:', error)
+   console.log('Status:', error.response?.status)
+   console.log('Data:', error.response?.data)
+    console.log('Message:', error.message)
+  authError.value = error.response?.data?.message || 'Đăng ký thất bại. Vui lòng thử lại.'
   } finally {
     authBusy.value = false
   }
 }
-
 async function loginCustomer() {
   authBusy.value = true
   authError.value = ''
@@ -896,13 +890,13 @@ async function loginCustomer() {
   }
 
   if (!verifyDemoPassword(loginForm.value.phone.trim(), loginForm.value.password)) {
-    authError.value = 'Mật khẩu demo không đúng.'
+    authError.value = 'Mật khẩu không đúng.'
     authBusy.value = false
     return
   }
 
   try {
-    const res = await api.post('/api/Customers/demo-login', { phone: loginForm.value.phone.trim() })
+    const res = await api.post('/api/Customers/Login', { phone: loginForm.value.phone.trim() })
     setCurrentCustomer(res.data)
     loadAvatar(res.data)
     loginForm.value = { phone: '', password: '' }
@@ -910,16 +904,6 @@ async function loginCustomer() {
     showNotice('Đăng nhập thành công.')
     await loadMyOrders()
   } catch (error) {
-    const localCustomer = loadDemoCustomer(loginForm.value.phone.trim())
-    if (localCustomer) {
-      setCurrentCustomer(localCustomer)
-      loadAvatar(localCustomer)
-      loginForm.value = { phone: '', password: '' }
-      closeAuth()
-      showNotice('Đăng nhập bằng dữ liệu demo local.')
-      await loadMyOrders()
-      return
-    }
     authError.value = error.response?.data?.message || 'Không tìm thấy khách hàng. Vui lòng đăng ký.'
   } finally {
     authBusy.value = false
@@ -952,11 +936,37 @@ async function updateBackendCustomer(customer, profile) {
   setCurrentCustomer(res.data)
   return currentUser.value
 }
+async function handleFileChange(event) {
+  const file = event.target.files[0]
+  if (!file) return
 
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    const res = await api.post(
+      `/api/Customers/${currentUser.value.customerId}/avatar`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    avatarUrl.value = `http://localhost:5002${res.data.avatarUrl}`
+    console.log('avatarUrl set to:', avatarUrl.value)
+    console.log('res.data:', res.data)
+    // Lưu vào currentUser để F5 không mất
+    currentUser.value.avatarUrl = res.data.avatarUrl
+    saveCustomerUser(currentUser.value)
+    showNotice('Cập nhật ảnh đại diện thành công.')
+  } 
+    catch (error) {
+  console.log('Full error:', error.message, error.code)
+  console.log('Response:', error.response)
+  showNotice('Không thể tải ảnh lên. Vui lòng thử lại.')
+    }
+}
 async function findCustomerByPhone(phone) {
   if (!phone) return null
   try {
-    const res = await api.post('/api/Customers/demo-login', { phone })
+    const res = await api.post('/api/Customers/login', { phone })
     return res.data
   } catch (error) {
     const localCustomer = loadDemoCustomer(phone)
@@ -1172,7 +1182,8 @@ async function submitCheckout() {
 }
 
 async function loadMyOrders() {
-  if (!currentUser.value?.customerId) return
+
+  if (currentUser.value?.isLocalOnly) return 
   myOrdersLoading.value = true
   try {
     const res = await api.get('/api/Orders', { params: { customerId: currentUser.value.customerId } })
@@ -1183,7 +1194,6 @@ async function loadMyOrders() {
     myOrdersLoading.value = false
   }
 }
-
 async function lookupOrder() {
   orderLookup.value.loading = true
   orderLookup.value.error = ''
@@ -1215,6 +1225,11 @@ function avatarKey(user = currentUser.value) {
 }
 
 function loadAvatar(user = currentUser.value) {
+  if (user?.avatarUrl) {
+    avatarUrl.value = `http://localhost:5002${user.avatarUrl}`
+    console.log('avatarUrl set to:', avatarUrl.value)
+    return
+  }
   const key = avatarKey(user)
   avatarUrl.value = key ? (localStorage.getItem(key) || '') : ''
 }
@@ -1279,7 +1294,16 @@ async function saveAccount() {
     const dobString = (accountProfile.value.year && accountProfile.value.month && accountProfile.value.day)
       ? `${accountProfile.value.year}-${String(accountProfile.value.month).padStart(2, '0')}-${String(accountProfile.value.day).padStart(2, '0')}`
       : null
-      
+    console.log('dobString being sent:', dobString)
+    const payload = {
+      fullName: accountForm.value.fullName.trim(),
+      phone: accountForm.value.phone.trim(),
+     email: accountForm.value.email.trim(),
+     address: accountForm.value.address.trim(),
+      gender: accountProfile.value.gender,
+    dateOfBirth: dobString
+    }
+    console.log('payload:', JSON.stringify(payload))
     const res = await api.put(`/api/Customers/${currentUser.value.customerId}/profile`, {
       fullName: accountForm.value.fullName.trim(),
       phone: accountForm.value.phone.trim(),
@@ -1289,6 +1313,13 @@ async function saveAccount() {
       dateOfBirth: dobString
     })
     setCurrentCustomer(res.data)
+    if (res.data && res.data.dateOfBirth) {
+      const parts = res.data.dateOfBirth.split('-')
+      await nextTick()
+      accountProfile.value.year = parseInt(parts[0])
+      accountProfile.value.month = parseInt(parts[1])
+      accountProfile.value.day = parseInt(parts[2])
+      } 
     accountEditing.value = { email: false, phone: false }
     accountMessage.value = 'Đã lưu thông tin tài khoản.'
     showNotice('Lưu thông tin thành công.')
@@ -1545,7 +1576,39 @@ watch(() => route.query.tab, tab => {
     activeAccountTab.value = ['profile', 'address', 'password', 'privacy', 'wallet'].includes(String(tab)) ? String(tab) : 'profile'
   }
 })
+function initProfileData() {
+  if (currentUser.value) {
+    // Đổ các dữ liệu chữ bình thường
+    accountForm.value.fullName = currentUser.value.fullName || ''
+    accountForm.value.phone = currentUser.value.phone || ''
+    accountForm.value.email = currentUser.value.email || ''
+    accountForm.value.address = currentUser.value.address || ''
+    accountProfile.value.gender = currentUser.value.gender || ''
 
+    // 🛠️ XỬ LÝ CHÍ MẠNG: Tách chuỗi từ DB nuôi lại 3 ô select khi F5
+    if (currentUser.value.dateOfBirth) {
+      // Tách chữ 'T' nếu DB trả về định dạng dính giờ giấc (ví dụ "2022-03-02T00:00:00")
+      const pureDate = currentUser.value.dateOfBirth.split('T')[0] 
+      const parts = pureDate.split('-') // ["2022", "03", "02"]
+      
+      accountProfile.value.year = parseInt(parts[0])
+      accountProfile.value.month = parseInt(parts[1])
+      accountProfile.value.day = parseInt(parts[2])
+    } else {
+      // Nếu DB chưa có ngày sinh thì reset về rỗng
+      accountProfile.value.year = ''
+      accountProfile.value.month = ''
+      accountProfile.value.day = ''
+    }
+  }
+}
+
+// Theo dõi sát sao biến currentUser, cứ hễ có dữ liệu (kể cả khi F5) là đập vào Form ngay
+watch(() => currentUser.value, (newVal) => {
+  if (newVal) {
+    initProfileData()
+  }
+}, { immediate: true })
 onMounted(async () => {
   const token = getStaffToken()
   const parsed = token ? parseStaffToken(token) : null
@@ -1553,14 +1616,37 @@ onMounted(async () => {
   else setStaffToken('')
 
   activityLogs.value = readJsonStorage(ACTIVITY_LOG_KEY, [])
-  if (currentUser.value) {
+   if (currentUser.value?.customerId) {
+    try {
+      // Gọi API GET lấy profile mới nhất từ DB (Thay URL đúng với API của bạn nhé)
+      const res = await api.get(`/api/Customers/${currentUser.value.customerId}/profile`)
+      console.log('profile avatarUrl:', res.data.avatarUrl)
+      // Cập nhật lại State tổng để các component khác cùng nhận dữ liệu mới
+      setCurrentCustomer(res.data) 
+      
+      // Rã chuỗi ngày sinh "yyyy-MM-dd" vừa lấy được nuôi vào 3 ô select
+      if (res.data && res.data.dateOfBirth) {
+        const parts = res.data.dateOfBirth.split('T')[0].split('-')
+        accountProfile.value.year = parseInt(parts[0])
+        accountProfile.value.month = parseInt(parts[1])
+        accountProfile.value.day = parseInt(parts[2])
+        console.log('after set:', accountProfile.value.year, accountProfile.value.month, accountProfile.value.day)
+        console.log('dateOfBirth from API:', res.data.dateOfBirth)
+      }
+      if (res.data.avatarUrl) {
+       avatarUrl.value = `http://localhost:5002${res.data.avatarUrl}`
+      }
+    } catch (err) {
+      console.error("Không lấy được profile mới nhất:", err)
+    }
+
     loadWalletState(currentUser.value)
     initCheckoutShipping()
   }
+
+  activityLogs.value = readJsonStorage(ACTIVITY_LOG_KEY, [])
   await loadProducts()
   if (currentUser.value) await loadMyOrders()
-  if (isStaffPage.value && !staffUser.value) openStaffAuth()
-  if (staffUser.value && isStaffPage.value) await loadStaffData()
 })
 </script>
 
@@ -1598,7 +1684,6 @@ onMounted(async () => {
         <button :class="{ active: activePage === 'shop' }" @click="openPage('shop')">Trang chủ</button>
         <button :class="{ active: activePage === 'lookup' }" @click="openPage('lookup')">Tra cứu đơn</button>
         <button :class="{ active: activePage === 'myOrders' }" @click="openPage('myOrders')">Đơn mua của tôi</button>
-        <button :class="{ active: activePage === 'account' }" @click="openPage('account')">Tài khoản</button>
       </nav>
 
       <div class="header-search">
@@ -1631,7 +1716,6 @@ onMounted(async () => {
             <path d="M2 4l4 4 4-4" stroke="#666" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </button>
-
         <div v-if="showUserMenu" class="user-dropdown">
           <button class="udrop-item" type="button" @click="openPage('account', 'profile'); showUserMenu = false">
             Tài Khoản Của Tôi
@@ -2058,13 +2142,20 @@ onMounted(async () => {
             </div>
           </form>
 
-          <aside class="avatar-panel">
-            <div class="avatar-preview" style="position: relative; overflow: hidden;">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="Ảnh đại diện" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
-              <span v-else style="font-size: 48px; color: #ccc;">{{ (currentUser?.fullName || '?')[0].toUpperCase() }}</span>
-            </div>
-            <label for="avatar-file-input" style="min-width: 142px; min-height: 54px; border: 1px solid #d1d5db; background: #fff; color: #374151; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">Chọn ảnh</label>
-          </aside>
+  <aside class="avatar-panel">
+  <div class="avatar-preview" style="position: relative; overflow: hidden; width: 150px; height: 150px;">
+    <img v-if="avatarUrl" :src="avatarUrl" alt="Ảnh đại diện" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
+    <span v-else style="font-size: 48px; color: #ccc;">{{ (currentUser?.fullName || '?')[0].toUpperCase() }}</span>
+  </div>
+  <input 
+    type="file" 
+    id="avatar-file-input" 
+    @change="handleFileChange" 
+    accept="image/*" 
+    style="display: none;" 
+  />
+  <label for="avatar-file-input" style="min-width: 142px; min-height: 54px; border: 1px solid #d1d5db; background: #fff; color: #374151; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">Chọn ảnh </label>
+</aside>
         </div>
 
         <div v-if="activeAccountTab === 'wallet'" class="account-summary-grid">
@@ -2378,7 +2469,7 @@ onMounted(async () => {
 
         <div v-if="authMode === 'login'" class="form-grid">
           <label>Số điện thoại<input v-model="loginForm.phone" type="text" /></label>
-          <label>Mật khẩu demo<input v-model="loginForm.password" type="password" /></label>
+          <label>Mật khẩu<input v-model="loginForm.password" type="password" /></label>
           <button class="primary-btn full" type="button" :disabled="authBusy" @click="loginCustomer">
             {{ authBusy ? 'Đang đăng nhập...' : 'Đăng nhập' }}
           </button>
@@ -2390,7 +2481,7 @@ onMounted(async () => {
           <label>Số điện thoại<input v-model="registerForm.phone" type="text" /></label>
           <label>Email<input v-model="registerForm.email" type="email" /></label>
           <label>Địa chỉ<input v-model="registerForm.address" type="text" /></label>
-          <label>Mật khẩu demo<input v-model="registerForm.password" type="password" /></label>
+          <label>Mật khẩu<input v-model="registerForm.password" type="password" /></label>
           <button class="primary-btn full" type="button" :disabled="authBusy" @click="registerCustomer">
             {{ authBusy ? 'Đang đăng ký...' : 'Đăng ký' }}
           </button>

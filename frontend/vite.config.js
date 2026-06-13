@@ -18,10 +18,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:5002',
-        changeOrigin: true
+    '/api': {
+      target: 'http://localhost:5002',
+      changeOrigin: true,
+      configure: (proxy) => {
+      proxy.on('error', (err) => console.log('Proxy error:', err))
       }
     }
+  }
   },
 })

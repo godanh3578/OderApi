@@ -72,9 +72,9 @@ button {
   min-height: 76px;
   padding: 12px clamp(16px, 4vw, 56px);
   display: grid;
-  grid-template-columns: auto auto minmax(180px, 1fr) auto auto;
+  grid-template-columns: auto 1fr minmax(120px, 400px) auto auto;
   align-items: center;
-  gap: 14px;
+  gap: clamp(6px, 1.5vw, 14px);
   background: rgba(255, 255, 255, .94);
   border-bottom: 1px solid #e5e7eb;
   backdrop-filter: blur(18px);
@@ -130,9 +130,11 @@ button {
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .main-nav button {
+  white-space: nowrap;
   min-height: 38px;
   border-radius: 999px;
   padding: 0 12px;
@@ -224,6 +226,9 @@ button {
   align-items: center;
   gap: 8px;
   position: relative;
+  min-width: 0;
+  max-width: 160px;
+  overflow: visible;
 }
 
 .user-chip button {
@@ -234,7 +239,22 @@ button {
   color: #334155;
   font-weight: 850;
 }
-
+.user-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80px;
+}
+.user-avatar-sm {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;  /* ← không cho co nhỏ hơn */
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .user-dropdown {
   position: absolute;
   right: 0;
@@ -243,7 +263,7 @@ button {
   background: #ffffff;
   border-radius: 14px;
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
-  z-index: 20;
+  z-index: 1000 ;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
