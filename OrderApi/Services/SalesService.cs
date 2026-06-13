@@ -12,6 +12,7 @@ namespace OrderApi.Services
         private readonly IOrderService _orderService;
         private readonly IPaymentService _paymentService;
         private readonly IOutboxService _outboxService;
+        private readonly IProductCatalogClient _productCatalogClient;
         private readonly ILogger<SalesService> _logger;
 
         public SalesService(
@@ -19,12 +20,14 @@ namespace OrderApi.Services
             IOrderService orderService,
             IPaymentService paymentService,
             IOutboxService outboxService,
+            IProductCatalogClient productCatalogClient,
             ILogger<SalesService> logger)
         {
             _dbContext = dbContext;
             _orderService = orderService;
             _paymentService = paymentService;
             _outboxService = outboxService;
+            _productCatalogClient = productCatalogClient;
             _logger = logger;
         }
 
@@ -41,6 +44,13 @@ namespace OrderApi.Services
             foreach (var item in dto.Items)
             {
                 var unitPrice = item.UnitPrice;
+                if (unitPrice <= 0)
+                {
+                    var product = await _productCatalogClient.GetProductAsync(item.ProductId)
+                        ?? throw new InvalidOperationException($"Product {item.ProductId} price/stock info not found");
+                    unitPrice = product.SellingPrice;
+                }
+
                 if (unitPrice <= 0)
                 {
                     var stock = await _dbContext.ProductStockCaches
@@ -105,6 +115,36 @@ namespace OrderApi.Services
                 if (item.Quantity <= 0)
                     throw new InvalidOperationException("Số lượng sản phẩm phải lớn hơn 0.");
 
+                var catalogProduct = await _productCatalogClient.GetProductAsync(item.ProductId)
+                    ?? throw new InvalidOperationException($"Product {item.ProductId} stock info not found");
+
+                if (catalogProduct.QuantityAvailable < item.Quantity)
+                    throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}");
+
+                var cachedStock = await _dbContext.ProductStockCaches
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(p => p.ProductId == item.ProductId);
+
+                if (cachedStock == null)
+                {
+                    cachedStock = new ProductStockCache
+                    {
+                        ProductId = catalogProduct.ProductId
+                    };
+                    _dbContext.ProductStockCaches.Add(cachedStock);
+                }
+
+                cachedStock.ProductCode = string.IsNullOrWhiteSpace(catalogProduct.ProductCode)
+                    ? $"SP{catalogProduct.ProductId:D3}"
+                    : catalogProduct.ProductCode;
+                cachedStock.ProductName = string.IsNullOrWhiteSpace(catalogProduct.ProductName)
+                    ? $"Product {catalogProduct.ProductId}"
+                    : catalogProduct.ProductName;
+                cachedStock.CategoryName = catalogProduct.CategoryName;
+                cachedStock.SellingPrice = catalogProduct.SellingPrice;
+                cachedStock.QuantityAvailable = catalogProduct.QuantityAvailable;
+                cachedStock.IsDeleted = false;
+
                 var stock = await _dbContext.ProductStockCaches
                     .FirstOrDefaultAsync(p => p.ProductId == item.ProductId)
                     ?? throw new InvalidOperationException($"Product {item.ProductId} stock info not found");
@@ -122,6 +162,12 @@ namespace OrderApi.Services
                 {
                     stock.StockStatus = StockStatus.LowStock;
                 }
+                else
+                {
+                    stock.StockStatus = StockStatus.InStock;
+                }
+
+                stock.LastUpdatedAt = DateTime.UtcNow;
 
                 items.Add(new CreateOrderDetailDto
                 {

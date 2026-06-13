@@ -28,6 +28,19 @@ services:
       timeout: 5s
       retries: 5
 
+  api-gateway:
+    build:
+      context: ./ApiGateway
+      dockerfile: Dockerfile
+    container_name: microservices-api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      orderapi:
+        condition: service_started
+
   orderapi:
     build:
       context: ./OrderApi
@@ -39,6 +52,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=OrderDB;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True"
       RabbitMQ__Host: rabbitmq
+      ProductIntegration__GatewayBaseUrl: "http://api-gateway:5000"
+      ProductIntegration__UseGatewayLookup: "false"
+      ProductIntegration__AllowCacheFallback: "true"
     depends_on:
       sqlserver:
         condition: service_healthy

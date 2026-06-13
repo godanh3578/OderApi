@@ -4,6 +4,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+const devApiProxy = process.env.VITE_DEV_API_PROXY ?? 'http://localhost:5002'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -19,7 +21,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5002',
+        target: devApiProxy,
         changeOrigin: true
       }
     }
