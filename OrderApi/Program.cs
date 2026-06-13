@@ -60,6 +60,15 @@ builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IDebtService, DebtService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
+builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>((serviceProvider, client) =>
+{
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var gatewayBaseUrl = config["ProductIntegration:GatewayBaseUrl"];
+    if (!string.IsNullOrWhiteSpace(gatewayBaseUrl))
+        client.BaseAddress = new Uri(gatewayBaseUrl);
+
+    client.Timeout = TimeSpan.FromSeconds(config.GetValue("ProductIntegration:TimeoutSeconds", 3));
+});
 
 builder.Services.AddSingleton<RabbitMqPublisher>();
 builder.Services.AddHostedService<StockConsumerService>();
