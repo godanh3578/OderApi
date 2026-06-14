@@ -8,7 +8,8 @@ namespace OrderApi.Models
         Confirmed,    // Đơn hàng đã được xác nhận
         Paid,         // Đơn hàng đã thanh toán đủ
         Debt,         // Đơn hàng còn công nợ
-        Cancelled     // Đơn hàng đã bị hủy
+        Cancelled,    // Đơn hàng đã bị hủy
+        Completed     // Đơn hàng đã hoàn thành (đã giao hàng và thanh toán đủ)
     }
 
     public enum PaymentStatus

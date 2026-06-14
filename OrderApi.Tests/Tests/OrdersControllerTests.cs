@@ -38,7 +38,7 @@ namespace OrderApi.Tests.Tests
                 .Options;
 
             var context = new OrderDbContext(options);
-            context.Customers.Add(new Customer
+            context.Customers.Add(new Customers
             {
                 CustomerId = 1,
                 CustomerCode = "KH001",

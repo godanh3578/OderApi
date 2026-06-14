@@ -20,6 +20,7 @@ const route = useRoute()
 
 const pagePaths = {
   shop: '/',
+  about: '/about',
   cart: '/cart',
   lookup: '/lookup',
   myOrders: '/my-orders',
@@ -33,7 +34,54 @@ const pagePaths = {
   integration: '/manage/integration',
   warehouse: '/manage/warehouse'
 }
+const reviewForm = ref({ orderId: null, productId: null, rating: 5, comment: '' })
+const reviewingItem = ref(null)
+const reviewMessage = ref('')
+const productReviews = ref([])
+const showProductReviewForm = ref(false)
+const productReviewMessage = ref('')
+const productReviewForm = ref({ rating: 5, comment: '' })
+function openReview(order, item) {
+  reviewingItem.value = item.orderDetailId
+  reviewForm.value = {
+    orderId: order.orderId,
+    productId: item.productId,
+    rating: 5,
+    comment: ''
+  }
+  reviewMessage.value = ''
+}
 
+function closeReview() {
+  reviewingItem.value = null
+  reviewMessage.value = ''
+}
+const selectedOrder = ref(null)
+
+function openOrderDetail(order) {
+  console.log('openOrderDetail called:', order)
+  selectedOrder.value = order
+}
+
+function closeOrderDetail() {
+  selectedOrder.value = null
+}
+const orderTabs = [
+  { label: 'Tất cả', value: 'all' },
+  { label: 'Chờ xác nhận', value: 'Pending' },
+  { label: 'Chờ xử lý', value: 'Processing' },
+  { label: 'Chờ lấy hàng', value: 'Pickup' },
+  { label: 'Đang giao', value: 'Shipping' },
+  { label: 'Đã thanh toán', value: 'Paid' },
+  { label: 'Chờ thanh toán', value: 'Pending' },
+  { label: 'Vận chuyển', value: 'Shipping' },
+  { label: 'Chờ giao hàng', value: 'Delivering' },
+  { label: 'Hoàn thành', value: 'Completed' },
+  { label: 'Đã hủy', value: 'Cancelled' },
+  { label: 'Trả hàng', value: 'Returned' },
+]
+const activeOrderTab = ref('all')
+const orderSearch = ref('')
 const staffPages = ['dashboard', 'orders', 'customers', 'suppliers', 'payments', 'debts', 'integration', 'warehouse']
 const staffPageTitles = {
   dashboard: 'Tổng quan bán hàng',
@@ -107,7 +155,8 @@ const staffUser = ref(null)
 const staffError = ref('')
 const staffBusy = ref(false)
 const staffLoginForm = ref({ username: 'sales01', role: 'Sales' })
-
+const productAverageRating = ref(0)
+const productTotalReviews = ref(0)
 const checkout = ref({
   voucher: 'NONE',
   paymentMethod: 'Cash',
@@ -137,7 +186,6 @@ const accountEditing = ref({ email: false, phone: false })
 const accountMessage = ref('')
 const activeAccountTab = ref('profile')
 const avatarUrl = ref('')
-
 const showAddressModal = ref(false)
 const editingAddressIndex = ref(-1)
 const addressForm = ref({
@@ -148,7 +196,6 @@ const addressForm = ref({
   type: 'Nhà Riêng',
   isDefault: false
 })
-
 const parsedAddresses = computed(() => {
   if (!accountForm.value.address) return []
   try {
@@ -204,7 +251,35 @@ function submitAddress() {
   saveAccount()
   closeAddressModal()
 }
+async function loadProductReviews(productId) {
+  try {
+    const res = await api.get('/api/Reviews', { params: { productId } })
+    productReviews.value = res.data.reviews
+    productAverageRating.value = res.data.averageRating
+    productTotalReviews.value = res.data.totalReviews
+  } catch {
+    productReviews.value = []
+    productAverageRating.value = 0
+    productTotalReviews.value = 0
+  }
+}
 
+async function submitProductReview() {
+  try {
+    await api.post('/api/Reviews', {
+  customerId: currentUser.value.customerId,
+  productId: productId(selectedProduct.value),
+  rating: productReviewForm.value.rating,
+  comment: productReviewForm.value.comment
+  })
+    productReviewMessage.value = 'Đánh giá thành công!'
+    showProductReviewForm.value = false
+    productReviewForm.value = { rating: 5, comment: '' }
+    await loadProductReviews(productId(selectedProduct.value))
+  } catch (error) {
+    productReviewMessage.value = error.response?.data?.message || 'Không thể gửi đánh giá.'
+  }
+}
 async function requestAccountDeletion() {
   if (!confirm('Bạn có chắc chắn muốn yêu cầu xóa tài khoản này? Hành động này không thể hoàn tác!')) return
 
@@ -262,7 +337,20 @@ vouchers.splice(
   { code: 'SALE50', label: 'SALE50 - giảm 50.000đ', type: 'fixed', value: 50000, minAmount: 300000, description: 'Áp dụng cho đơn từ 300.000đ.' },
   { code: 'VIP5', label: 'VIP5 - hạng Vàng/Kim cương', type: 'percent', value: 5, minTier: 'Vàng', description: 'Mã riêng cho khách hàng thân thiết.' }
 )
-
+const filteredOrders = computed(() => {
+  let orders = myOrders.value
+  if (activeOrderTab.value !== 'all') {
+    orders = orders.filter(o => o.orderStatus === activeOrderTab.value)
+  }
+  if (orderSearch.value.trim()) {
+    const term = orderSearch.value.trim().toLowerCase()
+    orders = orders.filter(o =>
+      o.orderCode?.toLowerCase().includes(term) ||
+      o.items?.some(i => i.productName?.toLowerCase().includes(term))
+    )
+  }
+  return orders
+})
 const activePage = computed(() => route.meta.page || 'shop')
 const isStaffPage = computed(() => staffPages.includes(activePage.value))
 const birthDays = Array.from({ length: 31 }, (_, index) => index + 1)
@@ -633,12 +721,11 @@ function addActivityLog(action, note, orderCode = '') {
 function formatMoney(value) {
   return Number(value || 0).toLocaleString('vi-VN') + 'đ'
 }
-
 function formatDateTime(value) {
   if (!value) return ''
-  return new Date(value).toLocaleString('vi-VN')
+  const utcValue = value.endsWith('Z') ? value : value + 'Z'
+  return new Date(utcValue).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
 }
-
 function maskMiddle(value, separator = '') {
   const text = String(value || '').trim()
   if (!text) return 'Chưa cập nhật'
@@ -1177,8 +1264,12 @@ function topUpWallet() {
   showNotice('Đã nạp tiền vào ví demo.')
 }
 
-function openProductDetail(product) {
+async function openProductDetail(product) {
   selectedProduct.value = product
+  showProductReviewForm.value = false
+  productReviewMessage.value = ''
+  productReviewForm.value = { rating: 5, comment: '' }
+  await loadProductReviews(productId(product))
 }
 
 function closeProductDetail() {
@@ -1249,9 +1340,12 @@ async function loadMyOrders() {
   try {
     const res = await api.get('/api/Orders', { params: { customerId: currentUser.value.customerId } })
     myOrders.value = mergeOrders(Array.isArray(res.data) ? res.data : [], loadLocalOrders())
-  } catch {
-    myOrders.value = loadLocalOrders()
-  } finally {
+  } 
+  catch (error) {
+  console.log('loadMyOrders error:', error.response?.status, error.message)
+  myOrders.value = loadLocalOrders()
+  }
+   finally {
     myOrdersLoading.value = false
   }
 }
@@ -1594,7 +1688,9 @@ async function cancelOrder(order, staff = false) {
 }
 
 watch(cart, () => saveCustomerCart(cart.value), { deep: true })
-
+watch(selectedOrder, (val) => {
+  console.log('selectedOrder changed:', val)
+})
 watch(finalAmount, (amount) => {
   if (checkout.value.depositAmount > amount) {
     checkout.value.depositAmount = amount
@@ -1720,7 +1816,7 @@ onMounted(async () => {
     <div v-if="notice.message" :class="['toast', notice.type]">
       {{ notice.message }}
     </div>
-
+   
     <div class="topbar" aria-label="Khuyến mãi đang chạy">
       <div class="sale-runner">
         <span>Flash Sale hôm nay - giảm đến 30%</span>
@@ -1748,7 +1844,7 @@ onMounted(async () => {
       <nav class="main-nav">
         <button :class="{ active: activePage === 'shop' }" @click="openPage('shop')">Trang chủ</button>
         <button :class="{ active: activePage === 'lookup' }" @click="openPage('lookup')">Tra cứu đơn</button>
-        <button :class="{ active: activePage === 'myOrders' }" @click="openPage('myOrders')">Đơn mua của tôi</button>
+        <button :class="{ active: activePage === 'about' }" @click="openPage('about')">Giới thiệu</button>
       </nav>
 
       <div class="header-search">
@@ -1797,7 +1893,21 @@ onMounted(async () => {
         </div>
       </div>
     </header>
-
+   <main v-if="activePage === 'about'" class="about-page">
+      <h1>Giới thiệu về RetailERP Market</h1>
+      <p>
+        Chào mừng bạn đến với RetailERP Market - nền tảng mua sắm demo tích hợp trực tiếp với Inventory Service của RetailERP. Tại đây, bạn có thể trải nghiệm quy trình mua hàng nhanh chóng, kiểm tra tồn kho chính xác và tạo đơn bán hàng ngay lập tức thông qua Order/Sales Service.
+      </p>
+      <p>
+        Mọi sản phẩm hiển thị đều được lấy trực tiếp từ kho hàng của Inventory Service, đảm bảo thông tin về tồn kho luôn cập nhật và chính xác. Khi bạn thêm sản phẩm vào giỏ hàng, hệ thống sẽ tự động kiểm tra tồn kho để đảm bảo bạn chỉ mua được những sản phẩm đang có sẵn.
+      </p>
+      <p>
+        Sau khi hoàn tất giỏ hàng, bạn có thể tiến hành thanh toán và tạo đơn bán hàng một cách dễ dàng. Đơn hàng của bạn sẽ được xử lý ngay lập tức qua Order/Sales Service, giúp bạn có trải nghiệm mua sắm liền mạch và nhanh chóng.
+      </p>
+      <p>
+        Hãy bắt đầu khám phá và trải nghiệm mua sắm tại RetailERP Market ngay hôm nay!
+      </p>
+    </main>
     <main v-if="activePage === 'shop'" class="shop-page">
       <section class="hero">
         <div class="hero-copy">
@@ -1996,7 +2106,6 @@ onMounted(async () => {
             <input v-model.number="checkout.depositAmount" type="number" min="0" :max="finalAmount" :disabled="!currentUser" />
           </label>
         </div>
-
         <div class="money-box">
           <p><span>Tổng tiền hàng</span><b>{{ formatMoney(cartTotal) }}</b></p>
           <p><span>Voucher</span><b>- {{ formatMoney(voucherDiscountAmount) }}</b></p>
@@ -2045,61 +2154,202 @@ onMounted(async () => {
         </div>
       </section>
     </main>
-
-    <main v-else-if="activePage === 'myOrders'" class="page">
-      <div class="page-title">
-        <span>Lịch sử</span>
-        <h1>Đơn mua của tôi</h1>
-      </div>
-      <div class="account-summary-grid">
-        <article class="debt-card">
-          <span>Công nợ hiện tại</span>
-          <b>{{ formatMoney(currentUser?.currentDebt || 0) }}</b>
-        </article>
-      </div>
-      <section class="panel">
-        <p v-if="myOrdersLoading" class="soft-alert">Đang tải đơn hàng...</p>
-        <div v-else-if="myOrders.length === 0" class="empty-state compact">
-          <h3>Chưa có đơn hàng</h3>
-          <p>Các đơn đã đặt sẽ hiển thị tại đây.</p>
+      
+   <template v-else-if="activePage === 'myOrders'">
+  <main class="page">
+    <div class="orders-layout">
+      <aside class="orders-sidebar">
+        <div class="orders-user-info">
+          <div class="orders-avatar">
+            <img v-if="avatarUrl" :src="avatarUrl" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />
+            <span v-else>{{ (currentUser?.fullName || '?')[0].toUpperCase() }}</span>
+          </div>
+          <div>
+            <div class="orders-username">{{ currentUser?.fullName }}</div>
+            <button class="orders-edit-btn" @click="openPage('account', 'profile')">
+              <i class="ti ti-pencil"></i> Sửa hồ sơ
+            </button>
+          </div>
         </div>
-        <div v-else class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Mã đơn</th>
-                <th>Ngày đặt</th>
-                <th>Tổng tiền</th>
-                <th>Đã trả</th>
-                <th>Công nợ</th>
-                <th>Thanh toán</th>
-                <th>Trạng thái đơn</th>
-                <th>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="order in myOrders" :key="order.orderId || order.id">
-                <td>{{ order.orderCode }}</td>
-                <td>{{ formatDateTime(order.orderDate) }}</td>
-                <td>{{ formatMoney(orderTotal(order)) }}</td>
-                <td>{{ formatMoney(order.paidAmount) }}</td>
-                <td>{{ formatMoney(orderDebt(order)) }}</td>
-                <td>
-                  <span :class="['status-pill', statusClass(paymentStatusFor(order))]">{{ statusLabel(paymentStatusFor(order)) }}</span>
-                  <small>{{ paymentMethodLabel(order.paymentMethod) }}</small>
-                </td>
-                <td><span :class="['status-pill', statusClass(order.orderStatus)]">{{ statusLabel(order.orderStatus) }}</span></td>
-                <td class="table-actions">
-                  <button v-if="canCancelOrder(order)" type="button" @click="cancelOrder(order)">X Hủy</button>
-                  <span v-else>✓ Đã xử lý</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+        <nav class="orders-sidenav">
+          <button class="orders-navitem" @click="openPage('account', 'profile')">
+            <i class="ti ti-user"></i> Tài khoản của tôi
+          </button>
+          <button class="orders-navitem active">
+            <i class="ti ti-file-text"></i> Đơn mua
+          </button>
+          <button class="orders-navitem" @click="openPage('account', 'wallet')">
+            <i class="ti ti-coin"></i> Ví RetailERP
+          </button>
+        </nav>
+      </aside>
 
+      <div class="orders-main">
+        <div class="orders-tabs">
+          <button
+            v-for="tab in orderTabs" :key="tab.value"
+            :class="['orders-tab', { active: activeOrderTab === tab.value }]"
+            @click="activeOrderTab = tab.value"
+          >{{ tab.label }}</button>
+        </div>
+
+        <div class="orders-search">
+          <i class="ti ti-search"></i>
+          <input v-model="orderSearch" placeholder="Tìm kiếm theo ID đơn hàng hoặc tên sản phẩm" />
+        </div>
+
+        <div v-if="myOrdersLoading" class="orders-empty">
+          <i class="ti ti-loader"></i>
+          <p>Đang tải đơn hàng...</p>
+        </div>
+
+        <div v-else-if="filteredOrders.length === 0" class="orders-empty">
+          <i class="ti ti-clipboard-x"></i>
+          <p>Chưa có đơn hàng</p>
+        </div>
+
+        <div v-else class="orders-list">
+          <div v-for="order in filteredOrders" :key="order.orderId || order.id" class="orders-card">
+            <div class="orders-card-header">
+              <span class="orders-shop-name">
+                <i class="ti ti-building-store"></i> RetailERP Market
+              </span>
+              <span :class="['status-pill', statusClass(order.orderStatus)]">
+                {{ statusLabel(order.orderStatus) }}
+              </span>
+            </div>
+
+            <div v-for="item in (order.items || [])" :key="item.orderDetailId" class="orders-item">
+              <div class="orders-item-img"><i class="ti ti-package"></i></div>
+              <div class="orders-item-info">
+                <div class="orders-item-name">{{ item.productName }}</div>
+                <div class="orders-item-meta">x{{ item.quantity }}</div>
+              </div>
+              <div class="orders-item-price">{{ formatMoney(item.subTotal) }}</div>
+            </div>
+
+            <div class="orders-card-footer">
+              <div class="orders-total">
+                Thành tiền: <span>{{ formatMoney(orderTotal(order)) }}</span>
+              </div>
+              <div class="orders-actions">
+                <button v-if="canCancelOrder(order)" class="orders-btn" @click="cancelOrder(order)">Hủy đơn</button>
+                <button class="orders-btn primary" @click="openOrderDetail(order)">Chi tiết</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal nằm ngoài main -->
+  <Teleport to="body">
+  <div v-if="selectedOrder" class="order-modal-overlay" @click.self="closeOrderDetail">
+    <div class="order-modal">
+      <div class="order-modal-header">
+        <div>
+          <div class="order-modal-code">{{ selectedOrder.orderCode }}</div>
+          <div class="order-modal-date">{{ formatDateTime(selectedOrder.orderDate) }}</div>
+        </div>
+        <button class="order-modal-close" @click="closeOrderDetail">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+
+      <div class="order-modal-body">
+        <div class="order-modal-section">
+  <div class="order-modal-section-title">Sản phẩm</div>
+  <div v-for="item in selectedOrder.items" :key="item.orderDetailId" class="order-modal-item-wrap">
+    <div class="order-modal-item">
+      <div class="order-modal-item-img"><i class="ti ti-package"></i></div>
+      <div class="order-modal-item-info">
+        <div class="order-modal-item-name">{{ item.productName }}</div>
+        <div class="order-modal-item-meta">{{ item.productCode }} · x{{ item.quantity }}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+        <div class="order-modal-item-price">{{ formatMoney(item.subTotal) }}</div>
+        <button class="orders-btn" style="font-size:12px;padding:4px 10px" @click="openReview(selectedOrder, item)">
+          <i class="ti ti-star"></i> Đánh giá
+        </button>
+      </div>
+    </div>
+
+    <!-- Form đánh giá inline -->
+    <div v-if="reviewingItem === item.orderDetailId" class="review-form">
+      <div class="review-stars">
+        <button
+          v-for="star in 5" :key="star"
+          type="button"
+          @click="reviewForm.rating = star"
+          :style="{ color: star <= reviewForm.rating ? '#f59e0b' : '#d1d5db', fontSize: '24px', background: 'none', border: 'none', cursor: 'pointer' }"
+        >★</button>
+      </div>
+      <textarea
+        v-model="reviewForm.comment"
+        placeholder="Nhận xét về sản phẩm..."
+        class="review-textarea"
+        rows="3"
+      ></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="orders-btn" @click="closeReview">Hủy</button>
+        <button class="orders-btn primary" @click="submitReview">Gửi đánh giá</button>
+      </div>
+        <div v-if="reviewMessage" style="font-size:13px;color:#16a34a;margin-top:6px">{{ reviewMessage }}</div>
+        </div>
+      </div>
+      </div>
+
+        <div class="order-modal-section">
+          <div class="order-modal-section-title">Chi tiết thanh toán</div>
+          <div class="order-modal-row">
+            <span>Tổng tiền hàng</span>
+            <span>{{ formatMoney(selectedOrder.totalAmount) }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Giảm giá</span>
+            <span>-{{ formatMoney(selectedOrder.discountAmount) }}</span>
+          </div>
+          <div class="order-modal-row total">
+            <span>Thành tiền</span>
+            <span>{{ formatMoney(selectedOrder.finalAmount) }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Đã thanh toán</span>
+            <span>{{ formatMoney(selectedOrder.paidAmount) }}</span>
+          </div>
+          <div v-if="selectedOrder.debtAmount > 0" class="order-modal-row debt">
+            <span>Công nợ</span>
+            <span>{{ formatMoney(selectedOrder.debtAmount) }}</span>
+          </div>
+        </div>
+
+        <div class="order-modal-section">
+          <div class="order-modal-section-title">Trạng thái</div>
+          <div class="order-modal-row">
+            <span>Đơn hàng</span>
+            <span :class="['status-pill', statusClass(selectedOrder.orderStatus)]">{{ statusLabel(selectedOrder.orderStatus) }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Thanh toán</span>
+            <span :class="['status-pill', statusClass(selectedOrder.paymentStatus)]">{{ statusLabel(selectedOrder.paymentStatus) }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Phương thức</span>
+            <span>{{ paymentMethodLabel(selectedOrder.paymentMethod) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="order-modal-footer">
+        <button v-if="canCancelOrder(selectedOrder)" class="orders-btn" @click="cancelOrder(selectedOrder); closeOrderDetail()">Hủy đơn</button>
+        <button class="orders-btn primary" @click="closeOrderDetail">Đóng</button>
+      </div>
+    </div>
+  </div>
+  </Teleport> 
+</template>
+   <!-- Modal chi tiết đơn hàng -->
     <main v-else-if="activePage === 'account'" class="account-page">
       <aside class="account-sidebar">
         <div class="account-side-group">
@@ -2493,26 +2743,88 @@ onMounted(async () => {
     </main>
 
     <div v-if="selectedProduct" class="modal-backdrop" @click.self="closeProductDetail">
-      <section class="modal-card product-modal">
-        <button class="modal-close" type="button" @click="closeProductDetail">×</button>
-        <div class="product-detail-grid">
-          <img :src="productImage(selectedProduct)" alt="" />
-          <div>
-            <span class="eyebrow">{{ productCode(selectedProduct) }} · {{ productCategory(selectedProduct) }}</span>
-            <h2>{{ productName(selectedProduct) }}</h2>
-            <p>{{ selectedProduct.manufacturerName }}</p>
-            <b class="detail-price">{{ formatMoney(productPrice(selectedProduct)) }}</b>
-            <div class="detail-facts">
-              <span>Còn trong kho: <b>{{ productStock(selectedProduct) }}</b></span>
-              <span>Trạng thái: <b>{{ productStock(selectedProduct) > 0 ? 'Còn hàng' : 'Hết hàng' }}</b></span>
-              <span>Đồng bộ từ Nhóm 1</span>
-            </div>
-            <button class="primary-btn full" type="button" :disabled="productStock(selectedProduct) <= 0" @click="addToCart(selectedProduct); closeProductDetail()">
-              {{ productStock(selectedProduct) > 0 ? 'Thêm vào giỏ hàng' : 'Sản phẩm đã hết hàng' }}
-            </button>
-          </div>
+  <section class="modal-card product-modal">
+    <button class="modal-close" type="button" @click="closeProductDetail">×</button>
+    <div class="product-detail-grid">
+      <img :src="productImage(selectedProduct)" alt="" />
+      <div>
+        <span class="eyebrow">{{ productCode(selectedProduct) }} · {{ productCategory(selectedProduct) }}</span>
+        <h2>{{ productName(selectedProduct) }}</h2>
+        <p>{{ selectedProduct.manufacturerName }}</p>
+        <b class="detail-price">{{ formatMoney(productPrice(selectedProduct)) }}</b>
+        <div class="detail-facts">
+          <span>Còn trong kho: <b>{{ productStock(selectedProduct) }}</b></span>
+          <span>Trạng thái: <b>{{ productStock(selectedProduct) > 0 ? 'Còn hàng' : 'Hết hàng' }}</b></span>
+          <span>Đồng bộ từ Nhóm 1</span>
         </div>
+        <button class="primary-btn full" type="button" :disabled="productStock(selectedProduct) <= 0" @click="addToCart(selectedProduct); closeProductDetail()">
+          {{ productStock(selectedProduct) > 0 ? 'Thêm vào giỏ hàng' : 'Sản phẩm đã hết hàng' }}
+        </button>
+      </div>
+    </div>
 
+    <!-- Phần đánh giá -->
+    <div class="product-reviews">
+      <div class="product-reviews-header">
+  <div>
+    <h3>Đánh giá sản phẩm</h3>
+    <div v-if="productTotalReviews > 0" class="rating-summary">
+      <span class="rating-avg">{{ productAverageRating }}</span>
+      <span class="rating-stars">
+        <span v-for="s in 5" :key="s" :style="{ color: s <= Math.round(productAverageRating) ? '#f59e0b' : '#d1d5db' }">★</span>
+      </span>
+      <span class="rating-count">({{ productTotalReviews }} đánh giá)</span>
+      </div>
+    </div>
+    <button v-if="currentUser && !showProductReviewForm" class="orders-btn primary" @click="showProductReviewForm = true">
+    <i class="ti ti-star"></i> Viết đánh giá
+    </button>
+    </div>
+
+      <!-- Form đánh giá -->
+      <div v-if="showProductReviewForm" class="review-form">
+        <div class="review-stars">
+          <button
+            v-for="star in 5" :key="star"
+            type="button"
+            @click="productReviewForm.rating = star"
+            :style="{ color: star <= productReviewForm.rating ? '#f59e0b' : '#d1d5db', fontSize: '24px', background: 'none', border: 'none', cursor: 'pointer' }"
+          >★</button>
+        </div>
+        <textarea
+          v-model="productReviewForm.comment"
+          placeholder="Nhận xét về sản phẩm..."
+          class="review-textarea"
+          rows="3"
+        ></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="orders-btn" @click="showProductReviewForm = false">Hủy</button>
+          <button class="orders-btn primary" @click="submitProductReview">Gửi đánh giá</button>
+        </div>
+        <div v-if="productReviewMessage" :style="{ color: productReviewMessage.includes('thành công') ? '#16a34a' : '#dc2626', fontSize: '13px', marginTop: '6px' }">
+          {{ productReviewMessage }}
+        </div>
+      </div>
+
+      <!-- Danh sách đánh giá -->
+      <div v-if="productReviews.length === 0" class="reviews-empty">
+        <p>Chưa có đánh giá nào.</p>
+      </div>
+      <div v-else class="reviews-list">
+        <div v-for="review in productReviews" :key="review.reviewId" class="review-item">
+          <div class="review-item-header">
+            <span class="review-author">{{ review.customerName }}</span>
+            <span class="review-stars-display">
+              <span v-for="s in 5" :key="s" :style="{ color: s <= review.rating ? '#f59e0b' : '#d1d5db' }">★</span>
+            </span>
+            <span class="review-date">{{ formatDateTime(review.createdAt) }}</span>
+          </div>
+          <p class="review-comment">{{ review.comment }}</p>
+        </div>
+      </div>
+     </div>
+   </section>
+  </div>
         <div v-if="relatedProducts.length" class="related-products">
           <h3>Sản phẩm cùng danh mục</h3>
           <div>
@@ -2523,9 +2835,7 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-      </section>
-    </div>
-
+      </div>
     <div v-if="showAuthModal" class="modal-backdrop">
       <section class="modal-card">
         <button class="modal-close" type="button" @click="closeAuth">×</button>
@@ -2629,7 +2939,6 @@ onMounted(async () => {
         </form>
       </section>
     </div>
-  </div>
 </template>
 
 <style scoped src="./App.css"></style>

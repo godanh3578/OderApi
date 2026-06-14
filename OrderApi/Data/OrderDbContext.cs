@@ -9,7 +9,7 @@ namespace OrderApi.Data
             : base(options)
         {
         }
-
+        public DbSet<Review> Reviews { get; set; }
         public DbSet<Customers> Customers { get; set; }
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderDetail> OrderDetails { get; set; }
