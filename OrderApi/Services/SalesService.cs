@@ -236,7 +236,7 @@ namespace OrderApi.Services
                 orderEntity.DebtAmount = 0;
             }
 
-            customer.TotalSpent += orderEntity.FinalAmount;
+            customer.TotalSpent += orderEntity.PaidAmount;
             customer.UpdatedAt = DateTime.UtcNow;
             orderEntity.UpdatedAt = DateTime.UtcNow;
 

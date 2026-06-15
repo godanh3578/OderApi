@@ -33,6 +33,7 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet("customer/{customerId}")]
+        [AllowAnonymous] 
         public async Task<IActionResult> GetByCustomerId(int customerId)
         {
             try
@@ -51,6 +52,7 @@ namespace OrderApi.Controllers
         }
 
         [HttpPost("{id}/pay")]
+        [AllowAnonymous] 
         public async Task<IActionResult> Pay(int id, [FromBody] CreateDebtPaymentDto dto)
         {
             try

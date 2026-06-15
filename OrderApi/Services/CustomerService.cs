@@ -242,9 +242,12 @@ private CustomerDto MapToDto(Customers customer)
         UpdatedAt = customer.UpdatedAt
     };
 }
-        public Task<CustomerDto?> GetCustomerByIdAsync(int customerId)
-        {
-            throw new NotImplementedException();
-        }
+       public async Task<CustomerDto?> GetCustomerByIdAsync(int customerId)  
+    {
+       var customer = await _dbContext.Customers
+        .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+       if (customer == null) return null;
+       return MapToDto(customer);
+    }
     }
 }

@@ -36,10 +36,10 @@ var jwtKey = builder.Configuration["Jwt:Key"] ?? "OrderApiSuperSecretKey123!@#Ch
 var jwtIss = builder.Configuration["Jwt:Issuer"] ?? "OrderApi";
 var jwtAud = builder.Configuration["Jwt:Audience"] ?? "OrderApiUsers";
 var keyBytes = Encoding.UTF8.GetBytes(jwtKey);
-
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {

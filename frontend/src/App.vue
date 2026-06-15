@@ -4,6 +4,7 @@ import { ShoppingBasket } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { getStaffToken, setStaffToken } from './api/client'
 
+
 import {
   loadCustomerCart,
   loadCustomerUser,
@@ -41,6 +42,17 @@ const productReviews = ref([])
 const showProductReviewForm = ref(false)
 const productReviewMessage = ref('')
 const productReviewForm = ref({ rating: 5, comment: '' })
+const showTopupModal = ref(false)
+const selectedTopupAmount = ref(0)
+const selectedTransaction = ref(null)
+
+function openTransactionDetail(transaction) {
+  selectedTransaction.value = transaction
+}
+
+function closeTransactionDetail() {
+  selectedTransaction.value = null
+}
 function openReview(order, item) {
   reviewingItem.value = item.orderDetailId
   reviewForm.value = {
@@ -103,7 +115,72 @@ const demoProducts = [
   { productId: 7, productCode: 'TT001', productName: 'Áo thun cotton nam', categoryName: 'Thời trang', sellingPrice: 150000, quantityAvailable: 18, stockStatus: 'InStock', manufacturerName: 'Đối tác Thời trang' },
   { productId: 8, productCode: 'VP001', productName: 'Bút bi Thiên Long hộp 20 cây', categoryName: 'Văn phòng phẩm', sellingPrice: 65000, quantityAvailable: 50, stockStatus: 'InStock', manufacturerName: 'Thiên Long' }
 ]
+async function confirmTopup() {
+  const amount = Number(selectedTopupAmount.value || 0)
+  if (amount < 10000) {
+    showNotice('Số tiền nạp tối thiểu là 10.000đ.', 'bad')
+    return
+  }
+  if (amount > 2000000) {
+    showNotice('Số tiền nạp tối đa là 2.000.000đ.', 'bad')
+    return
+  }
 
+  const currentDebt = Number(currentUser.value?.currentDebt || 0)
+  let remainingAmount = amount
+
+  if (currentDebt > 0) {
+    const debtPayment = Math.min(remainingAmount, currentDebt)
+    remainingAmount -= debtPayment
+
+    // Lấy debt ID rồi thanh toán
+    try {
+      const debtRes = await api.get(`/api/Debts/customer/${currentUser.value.customerId}`)
+      const debts = debtRes.data?.debts || []
+      const unpaidDebt = debts.find(d => d.remainingAmount > 0 || d.debtStatus !== 'Paid')
+      
+      if (unpaidDebt) {
+        await api.post(`/api/Debts/${unpaidDebt.debtId}/pay`, {
+          amount: debtPayment,
+          note: 'Trả công nợ từ nạp ví'
+        })
+      }
+    } catch (err) {
+      console.log('Debt pay error:', err.response?.data)
+    }
+
+    currentUser.value.currentDebt = currentDebt - debtPayment
+    addWalletTransaction('debt_payment', debtPayment, `Trả công nợ từ nạp ví`)
+    addActivityLog('wallet.debt_payment', `Trừ công nợ ${formatMoney(debtPayment)}`)
+
+    if (remainingAmount === 0) {
+      showNotice(`Đã trừ ${formatMoney(debtPayment)} vào công nợ. Công nợ còn lại: ${formatMoney(currentUser.value.currentDebt)}`)
+    } else {
+      showNotice(`Đã trừ ${formatMoney(debtPayment)} vào công nợ. Nạp ${formatMoney(remainingAmount)} vào ví.`)
+    }
+  }
+
+  if (remainingAmount > 0) {
+    currentUser.value.walletBalance = walletBalance.value + remainingAmount
+    addWalletTransaction('topup', remainingAmount, `Nạp tiền qua ${selectedPaymentMethod.value}`)
+    addActivityLog('wallet.topup', `Khách nạp ví ${formatMoney(remainingAmount)}`)
+    if (currentDebt <= 0) {
+      showNotice(`Đã nạp ${formatMoney(remainingAmount)} vào ví thành công.`)
+    }
+  }
+
+  saveCustomerUser(currentUser.value)
+  showTopupModal.value = false
+  selectedTopupAmount.value = 0
+
+  // Reload lại từ backend
+  try {
+    const res = await api.get(`/api/Customers/${currentUser.value.customerId}`)
+    setCurrentCustomer(res.data)
+  } catch (err) {
+    console.log('Reload customer error:', err)
+  }
+}
 const LOCAL_ORDERS_KEY = 'retailerpLocalOrders'
 const LOCAL_STOCK_RESERVES_KEY = 'retailerpLocalStockReserves'
 const WALLET_STATE_KEY = 'retailerpWalletState'
@@ -149,7 +226,7 @@ const authError = ref('')
 const loginForm = ref({ phone: '', password: '' })
 const registerForm = ref({ fullName: '', phone: '', email: '', address: '', password: '' ,gender: 0,dateOfBirth:null})
 const showUserMenu = ref(false)
-
+const showTopupPresets = ref(false)
 const showStaffModal = ref(false)
 const staffUser = ref(null)
 const staffError = ref('')
@@ -1229,7 +1306,6 @@ function createLocalOrder(customer) {
     }))
   }
 }
-
 function applyCheckoutSideEffects(order) {
   if (!currentUser.value) return
 
@@ -1239,7 +1315,11 @@ function applyCheckoutSideEffects(order) {
   }
 
   currentUser.value.currentDebt = Math.max(0, Number(currentUser.value.currentDebt || 0) + orderDebt(order))
-  currentUser.value.totalSpent = Number(currentUser.value.totalSpent || 0) + orderTotal(order)
+  console.log('applyCheckout - orderTotal:', orderTotal(order), 'paidAmount:', order.paidAmount)
+ currentUser.value.totalSpent = Number(currentUser.value.totalSpent || 0) + (order.paidAmount || 0)
+
+  // ← Chỉ cộng số tiền đã thanh toán, không cộng toàn bộ
+  console.log('totalSpent after:', currentUser.value.totalSpent)
   saveCustomerUser(currentUser.value)
   saveDemoCustomer(currentUser.value)
   saveWalletState()
@@ -1670,9 +1750,17 @@ async function cancelOrder(order, staff = false) {
       await loadProducts()
       await loadStaffData()
       await loadMyOrders()
+
+      // ← Thêm reload customer để cập nhật TotalSpent
+      // Sau khi gọi API hủy thành công
+    if (currentUser.value?.customerId) {
+      const res = await api.get(`/api/Customers/${currentUser.value.customerId}`)
+    setCurrentCustomer(res.data)
+    }
       showNotice('Đã hủy đơn hàng.')
       return
     }
+    
     throw new Error('local')
   } catch (error) {
     if (staff && error.message !== 'local' && error.response) {
@@ -2479,41 +2567,208 @@ onMounted(async () => {
             <div>
               <b>{{ currentMemberTier.name }}</b>
               <em>{{ currentMemberTier.badge }}</em>
+              <button :class="['account-sub', { active: activeAccountTab === 'membership' }]" type="button" @click="activeAccountTab = 'membership'">Hạng Thành Viên</button>
             </div>
             <p>Ưu đãi tự động {{ currentMemberTier.rate }}% khi thanh toán.</p>
             <div class="tier-progress"><i :style="{ width: tierProgressPercent + '%' }"></i></div>
             <small v-if="nextMemberTier">Còn {{ formatMoney(nextMemberTier.minSpent - (currentUser?.totalSpent || 0)) }} để lên hạng {{ nextMemberTier.name }}</small>
             <small v-else>Bạn đang ở hạng cao nhất.</small>
           </article>
-          <article class="wallet-card">
-            <span>Ví RetailERP</span>
-            <b>{{ formatMoney(walletBalance) }}</b>
-            <div class="wallet-topup">
-              <input v-model.number="walletTopUpAmount" type="number" min="0" placeholder="Nhập số tiền" />
-              <button type="button" @click="topUpWallet">Nạp ví</button>
-            </div>
-          </article>
+         <article class="wallet-card">
+        <span>Ví RetailERP</span>
+          <b>{{ formatMoney(walletBalance) }}</b>
+        <button class="orders-btn primary" style="margin-top: 12px" @click="showTopupModal = true">Nạp ví</button>
+        </article>
           <article class="debt-card">
             <span>Công nợ hiện tại</span>
             <b>{{ formatMoney(currentUser?.currentDebt || 0) }}</b>
             <p>Công nợ phát sinh khi thanh toán một phần hoặc ví không đủ số dư.</p>
           </article>
         </div>
+        <div v-else-if="activeAccountTab === 'membership'" class="membership-content">
+  <!-- Hạng hiện tại -->
+  <div :class="['membership-current', currentMemberTier.className]">
+    <div class="membership-badge">{{ currentMemberTier.badge }}</div>
+    <div class="membership-info">
+      <div class="membership-name">{{ currentMemberTier.name }}</div>
+      <div class="membership-spent">Tổng chi tiêu: {{ formatMoney(currentUser?.totalSpent || 0) }}</div>
+    </div>
+    <div class="membership-discount">-{{ currentMemberTier.rate }}%</div>
+  </div>
 
-        <div v-if="activeAccountTab === 'wallet' && walletTransactions.length" class="wallet-history">
-          <h3>Lịch sử giao dịch ví</h3>
-          <div v-for="transaction in walletTransactions.slice(0, 4)" :key="transaction.id" class="wallet-transaction">
-            <span>{{ transaction.note }}</span>
-            <b :class="{ minus: transaction.amount < 0 }">{{ formatMoney(transaction.amount) }}</b>
-            <small>{{ formatDateTime(transaction.createdAt) }}</small>
+  <!-- Thanh tiến trình -->
+  <div class="membership-progress-wrap">
+    <div class="membership-progress-bar">
+      <div class="membership-progress-fill" :style="{ width: tierProgressPercent + '%' }"></div>
+    </div>
+    <div class="membership-progress-label">
+      <span v-if="nextMemberTier">
+        Còn <b>{{ formatMoney(nextMemberTier.minSpent - (currentUser?.totalSpent || 0)) }}</b> để lên hạng <b>{{ nextMemberTier.name }}</b>
+      </span>
+      <span v-else>🎉 Bạn đang ở hạng cao nhất!</span>
+    </div>
+  </div>
+
+  <!-- Bảng các hạng -->
+  <div class="membership-tiers">
+    <div
+      v-for="tier in memberTiers" :key="tier.name"
+      :class="['membership-tier-row', tier.className, { current: tier.name === currentMemberTier.name }]"
+    >
+      <div class="tier-badge">{{ tier.badge }}</div>
+      <div class="tier-info">
+        <div class="tier-name">{{ tier.name }}</div>
+        <div class="tier-requirement">Chi tiêu từ {{ formatMoney(tier.minSpent) }}</div>
+      </div>
+      <div class="tier-benefits">
+        <div class="tier-discount">Giảm {{ tier.rate }}%</div>
+        <div class="tier-perks">
+          <span v-if="tier.rate >= 0">✓ Chi tiêu để nâng cấp hạng thành viên</span>
+          <span v-if="tier.rate >= 2 && tier.rate < 5">✓ Giảm 2% khi mua hàng</span>
+          <span v-if="tier.rate >= 5 && tier.rate < 10">✓ Giảm 5% khi mua hàng</span>
+          <span v-if="tier.rate >= 5 && tier.rate < 10">✓ Có voucher giảm 5% khi mua hàng</span>
+          <span v-if="tier.rate >= 10">✓ Giảm 10% khi mua hàng</span>
+          <span v-if="tier.rate >= 10">✓ Có voucher giảm 5% khi mua hàng</span>
+        </div>
+      </div>
+      <div v-if="tier.name === currentMemberTier.name" class="tier-current-badge">Hiện tại</div>
+    </div>
+  </div>
+  <!-- Đặc quyền hiện tại -->
+  <div class="membership-privileges">
+    <h3>Đặc quyền của bạn</h3>
+    <div class="privilege-list">
+      <div class="privilege-item">
+        <i class="ti ti-tag"></i>
+        <div>
+          <b>Giảm giá {{ currentMemberTier.rate }}%</b>
+          <p>Tự động áp dụng khi thanh toán</p>
+        </div>
+      </div>
+      <div v-if="currentMemberTier.rate >= 5" class="privilege-item">
+        <i class="ti ti-cup"></i>
+        <div>
+          <b>Ưu đãi đặc biệt</b>
+          <p>Nhận voucher giảm giá 5% mỗi tháng</p>
+        </div>
+      </div>
+     </div>
+    </div>
+  </div>
+     <Teleport to="body">
+  <div v-if="showTopupModal" class="order-modal-overlay" @click.self="showTopupModal = false">
+    <div class="order-modal" style="max-width: 480px">
+      <div class="order-modal-header">
+        <div>
+          <div class="order-modal-code">Nạp tiền vào ví</div>
+          <div class="order-modal-date">Số dư hiện tại: {{ formatMoney(walletBalance) }}</div>
+        </div>
+        <button class="order-modal-close" @click="showTopupModal = false">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <div class="order-modal-body">
+        <!-- Bảng mệnh giá -->
+        <div class="order-modal-section">
+          <div class="order-modal-section-title">Chọn mệnh giá</div>
+          <div class="topup-presets">
+            <button
+              v-for="amount in [10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000]"
+              :key="amount"
+              type="button"
+              :class="['topup-preset-btn', { active: selectedTopupAmount === amount }]"
+              @click="selectedTopupAmount = amount"
+            >{{ formatMoney(amount) }}</button>
+          </div>
+          <input
+            v-model.number="selectedTopupAmount"
+            type="number"
+            min="10000"
+            max="2000000"
+            style="width: 100%; margin-top: 10px; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit; box-sizing: border-box"
+          />
+        </div>
+
+        <!-- Phương thức nạp -->
+        <div class="order-modal-section">
+          <div class="order-modal-section-title">Phương thức nạp</div>
+          <div class="payment-methods">
+            <label :class="['payment-method-item', { active: selectedPaymentMethod === 'bank' }]">
+              <input type="radio" v-model="selectedPaymentMethod" value="bank" hidden />
+              <i class="ti ti-building-bank"></i>
+              <span>Chuyển khoản</span>
+            </label>
+            <label :class="['payment-method-item', { active: selectedPaymentMethod === 'momo' }]">
+              <input type="radio" v-model="selectedPaymentMethod" value="momo" hidden />
+              <i class="ti ti-wallet"></i>
+              <span>Ví MoMo</span>
+            </label>
+            <label :class="['payment-method-item', { active: selectedPaymentMethod === 'vnpay' }]">
+              <input type="radio" v-model="selectedPaymentMethod" value="vnpay" hidden />
+              <i class="ti ti-credit-card"></i>
+              <span>VNPay</span>
+            </label>
+            <label :class="['payment-method-item', { active: selectedPaymentMethod === 'cash' }]">
+              <input type="radio" v-model="selectedPaymentMethod" value="cash" hidden />
+              <i class="ti ti-cash"></i>
+              <span>Tiền mặt</span>
+            </label>
           </div>
         </div>
 
-        <div v-if="activeAccountTab === 'wallet' && !walletTransactions.length" class="wallet-history">
-          <h3>Lịch sử giao dịch ví</h3>
-          <p>Chưa có giao dịch ví.</p>
+        <!-- Chi tiết giao dịch -->
+        <div v-if="selectedTopupAmount > 0" class="order-modal-section">
+          <div class="order-modal-section-title">Chi tiết giao dịch</div>
+          <div class="order-modal-row">
+            <span>Loại thanh toán</span>
+            <span>{{ selectedPaymentMethod === 'bank' ? 'Chuyển khoản' : selectedPaymentMethod === 'momo' ? 'Ví MoMo' : selectedPaymentMethod === 'vnpay' ? 'VNPay' : 'Tiền mặt' }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Mệnh giá</span>
+            <span style="color: #e24b4a; font-weight: 500">{{ formatMoney(selectedTopupAmount) }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Số lượng</span>
+            <span>1</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Email nhận</span>
+            <span>{{ currentUser?.email || '—' }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Phí quản lý</span>
+            <span style="color: #16a34a">Miễn phí</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Giảm giá</span>
+            <span>0đ</span>
+          </div>
+          <div class="order-modal-row total" style="border-top: 1px solid #e5e7eb; margin-top: 8px; padding-top: 12px;">
+            <span>Tổng tiền</span>
+            <span style="color: #e24b4a; font-size: 18px; font-weight: 700">{{ formatMoney(selectedTopupAmount) }}</span>
+          </div>
         </div>
-
+      </div>
+      <div class="order-modal-footer">
+        <button class="orders-btn" @click="showTopupModal = false">Hủy</button>
+        <button class="orders-btn primary" :disabled="!selectedTopupAmount" @click="confirmTopup">
+          Xác nhận nạp
+        </button>
+        </div>
+      </div>
+    </div>
+    </Teleport>
+  <div v-if="activeAccountTab === 'wallet' && walletTransactions.length" class="wallet-history">
+  <h3>Lịch sử giao dịch ví</h3>
+  <div v-for="transaction in walletTransactions.slice(0, 4)" :key="transaction.id" class="wallet-transaction">
+    <span>{{ transaction.note }}</span>
+    <b :class="{ minus: transaction.amount < 0 }">{{ formatMoney(transaction.amount) }}</b>
+    <small>{{ formatDateTime(transaction.createdAt) }}</small>
+    <button class="orders-btn" style="font-size:12px;padding:4px 10px" @click="openTransactionDetail(transaction)">
+      Chi tiết
+    </button>
+   </div>
+  </div>
         <div v-else-if="activeAccountTab === 'address'" class="profile-content" style="grid-template-columns: 1fr; gap: 0; padding-top: 16px;">
           <div class="address-list">
             <div v-if="parsedAddresses.length === 0" class="empty-address" style="text-align: center; padding: 40px; color: #888;">
@@ -2939,6 +3194,61 @@ onMounted(async () => {
         </form>
       </section>
     </div>
+    <Teleport to="body">
+  <div v-if="selectedTransaction" class="order-modal-overlay" @click.self="closeTransactionDetail">
+    <div class="order-modal" style="max-width: 420px">
+      <div class="order-modal-header">
+        <div>
+          <div class="order-modal-code">Chi tiết giao dịch</div>
+          <div class="order-modal-date">{{ formatDateTime(selectedTransaction.createdAt) }}</div>
+        </div>
+        <button class="order-modal-close" @click="closeTransactionDetail">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+
+      <div class="order-modal-body">
+        <div class="order-modal-section">
+          <div class="order-modal-row">
+            <span>Loại giao dịch</span>
+            <span>{{ 
+              selectedTransaction.type === 'topup' ? 'Nạp tiền' :
+              selectedTransaction.type === 'debt_payment' ? 'Trả công nợ' :
+              selectedTransaction.type === 'payment' ? 'Thanh toán đơn hàng' : 
+              selectedTransaction.type 
+            }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Số tiền</span>
+            <b :class="{ 'minus': selectedTransaction.amount < 0 }" style="font-size:15px">
+              {{ formatMoney(selectedTransaction.amount) }}
+            </b>
+          </div>
+          <div class="order-modal-row">
+            <span>Ghi chú</span>
+            <span>{{ selectedTransaction.note }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Thời gian</span>
+            <span>{{ formatDateTime(selectedTransaction.createdAt) }}</span>
+          </div>
+          <div class="order-modal-row">
+            <span>Mã giao dịch</span>
+            <span style="font-size:12px;color:var(--color-text-secondary)">{{ selectedTransaction.id }}</span>
+          </div>
+          <div class="order-modal-row total">
+            <span>Số dư sau giao dịch</span>
+            <span>{{ formatMoney(selectedTransaction.balanceAfter || 0) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="order-modal-footer">
+        <button class="orders-btn primary" @click="closeTransactionDetail">Đóng</button>
+      </div>
+    </div>
+  </div>
+</Teleport>
 </template>
 
 <style scoped src="./App.css"></style>

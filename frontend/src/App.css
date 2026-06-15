@@ -1715,12 +1715,317 @@ button {
   padding: 18px;
   background: #f8fafc;
 }
+.rank-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: fit-content;
+  min-width: 260px;
+  padding: 12px 22px 12px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #101827, #172033);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 0 20px rgba(88, 166, 255, 0.25),
+    inset 0 0 18px rgba(255, 255, 255, 0.06);
+}
 
+.rank-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  background: radial-gradient(circle, #ffffff, #7dd3fc, #2563eb);
+  color: white;
+  box-shadow: 0 0 18px rgba(125, 211, 252, 0.8);
+}
+
+.user-name {
+  font-size: 20px;
+  font-weight: 800;
+  color: #eaf6ff;
+}
+
+.rank-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #7dd3fc;
+  text-transform: uppercase;
+}
+
+.rank-diamond {
+  border-color: rgba(125, 211, 252, 0.7);
+}
 .table-wrap {
   width: 100%;
   overflow-x: auto;
 }
+.topup-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
 
+.topup-preset-btn {
+  padding: 8px 4px;
+  border: 1px solid var(--color-border-secondary, #e5e7eb);
+  border-radius: var(--border-radius-md);
+  background: var(--color-background-secondary, #f9fafb);
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  transition: all 0.15s;
+}
+.payment-methods {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.payment-method-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-secondary, #e5e7eb);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  transition: all 0.15s;
+}
+
+.payment-method-item:hover {
+  border-color: #e24b4a;
+  color: #e24b4a;
+}
+
+.payment-method-item.active {
+  border-color: #e24b4a;
+  background: #fff5f5;
+  color: #e24b4a;
+  font-weight: 500;
+}
+.topup-preset-btn:hover {
+  border-color: #e24b4a;
+  color: #e24b4a;
+}
+
+.topup-preset-btn.active {
+  background: #e24b4a;
+  border-color: #e24b4a;
+  color: #fff;
+  font-weight: 500;
+}
+.membership-content {
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.membership-current {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--border-radius-lg);
+  background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
+}
+
+.membership-current.silver {
+  background: linear-gradient(135deg, #e8e8e8, #c0c0c0);
+}
+
+.membership-current.gold {
+  background: linear-gradient(135deg, #fff8e1, #ffd700);
+}
+
+.membership-current.diamond {
+  background: linear-gradient(135deg, #e3f2fd, #90caf9);
+}
+
+.membership-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.membership-info {
+  flex: 1;
+}
+
+.membership-name {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.membership-spent {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.membership-discount {
+  font-size: 28px;
+  font-weight: 700;
+  color: #e24b4a;
+}
+
+.membership-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.membership-progress-bar {
+  height: 8px;
+  background: var(--color-background-secondary, #f0f0f0);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.membership-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e24b4a, #ff8a65);
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+
+.membership-progress-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.membership-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.membership-tier-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border-tertiary, #e5e7eb);
+  background: var(--color-background-primary);
+  position: relative;
+}
+
+.membership-tier-row.current {
+  border-color: #e24b4a;
+  background: #fff5f5;
+}
+
+.tier-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-background-secondary, #f0f0f0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.membership-tier-row.silver .tier-badge { background: #c0c0c0; color: #fff; }
+.membership-tier-row.gold .tier-badge { background: #ffd700; color: #333; }
+.membership-tier-row.diamond .tier-badge { background: #90caf9; color: #fff; }
+
+.tier-info {
+  flex: 1;
+}
+
+.tier-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tier-requirement {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.tier-benefits {
+  text-align: right;
+}
+
+.tier-discount {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e24b4a;
+}
+
+.tier-perks {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.tier-current-badge {
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  background: #e24b4a;
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.membership-privileges h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.privilege-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.privilege-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-background-secondary, #f9fafb);
+  border-radius: var(--border-radius-md);
+}
+
+.privilege-item i {
+  font-size: 20px;
+  color: #e24b4a;
+  margin-top: 2px;
+}
+
+.privilege-item b {
+  font-size: 14px;
+}
+
+.privilege-item p {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+}
 table {
   width: 100%;
   border-collapse: collapse;

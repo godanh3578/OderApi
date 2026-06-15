@@ -266,16 +266,24 @@ namespace OrderApi.Services
 
                 return true;
             }
-
+            
             if (order.StockRestoredAt == null)
                 await RestoreStockForCancelledOrderAsync(order);
 
-            if (order.Customer != null && order.DebtAmount > 0)
-            {
-                order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - order.DebtAmount);
-                order.Customer.UpdatedAt = DateTime.UtcNow;
-            }
-
+            if (order.Customer != null)
+           Console.WriteLine($"Before cancel - PaidAmount: {order.PaidAmount}, TotalSpent: {order.Customer.TotalSpent}");
+          {
+           if (order.PaidAmount > 0)
+          {
+            order.Customer.TotalSpent = Math.Max(0, order.Customer.TotalSpent - order.PaidAmount);
+          }
+          if (order.DebtAmount > 0)
+         {
+          order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - order.DebtAmount);
+         }
+    Console.WriteLine($"After cancel - TotalSpent: {order.Customer.TotalSpent}, CurrentDebt: {order.Customer.CurrentDebt}");
+    order.Customer.UpdatedAt = DateTime.UtcNow;
+    }
             if (order.Debt != null)
             {
                 order.Debt.PaidAmount = order.Debt.DebtAmount;
