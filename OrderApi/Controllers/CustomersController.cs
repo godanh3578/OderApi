@@ -65,6 +65,24 @@ namespace OrderApi.Controllers
             return Ok(customer);
         }
 
+        [HttpGet("exists")]
+        [AllowAnonymous]
+        public async Task<IActionResult> Exists([FromQuery] string? phone, [FromQuery] string? email)
+        {
+            var phoneCustomer = string.IsNullOrWhiteSpace(phone)
+                ? null
+                : await _customerService.GetCustomerByPhoneAsync(phone.Trim());
+            var emailCustomer = string.IsNullOrWhiteSpace(email)
+                ? null
+                : await _customerService.GetCustomerByEmailAsync(email.Trim());
+
+            return Ok(new
+            {
+                phoneExists = phoneCustomer != null,
+                emailExists = emailCustomer != null
+            });
+        }
+
         [HttpGet("{id}/purchase-history")]
         [Authorize(Roles = "Admin,Sales")]
         public async Task<IActionResult> GetPurchaseHistory(int id)
@@ -111,6 +129,14 @@ namespace OrderApi.Controllers
             }
             catch (InvalidOperationException ex)
             {
+                if (ex.Message.StartsWith("DUPLICATE_", StringComparison.OrdinalIgnoreCase))
+                {
+                    var message = ex.Message.Contains(':')
+                        ? ex.Message[(ex.Message.IndexOf(':') + 1)..].Trim()
+                        : ex.Message;
+                    return Conflict(new { message });
+                }
+
                 return BadRequest(new { message = ex.Message });
             }
         }
@@ -179,12 +205,27 @@ namespace OrderApi.Controllers
         }
 
         [HttpDelete("{id}")]
-        [AllowAnonymous]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
         {
-            var ok = await _customerService.DeleteCustomerAsync(id);
-            if (!ok) return NotFound();
-            return Ok();
+            try
+            {
+                var ok = await _customerService.DeleteCustomerAsync(id);
+                if (!ok) return NotFound();
+                return Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (ex.Message.StartsWith("DUPLICATE_", StringComparison.OrdinalIgnoreCase))
+                {
+                    var message = ex.Message.Contains(':')
+                        ? ex.Message[(ex.Message.IndexOf(':') + 1)..].Trim()
+                        : ex.Message;
+                    return Conflict(new { message });
+                }
+
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 

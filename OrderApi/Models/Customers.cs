@@ -44,8 +44,14 @@ namespace OrderApi.Models
         [Range(0, double.MaxValue)]
         public decimal TotalSpent { get; set; } = 0;
 
+        [StringLength(30)]
+        public string MembershipTier { get; set; } = "";
+
         [Range(0, double.MaxValue)]
         public decimal CurrentDebt { get; set; } = 0;
+
+        [Range(0, double.MaxValue)]
+        public decimal WalletBalance { get; set; } = 0;
 
         public CustomerStatus Status { get; set; } = CustomerStatus.Active;
 

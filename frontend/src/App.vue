@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch , nextTick} from 'vue'
+import { Icon } from '@iconify/vue'
 import { ShoppingBasket } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
-import api, { getStaffToken, setStaffToken } from './api/client'
+import api, { API_BASE, getStaffToken, setStaffToken } from './api/client'
 
 import {
   loadCustomerCart,
@@ -35,6 +36,7 @@ const pagePaths = {
 }
 
 const staffPages = ['dashboard', 'orders', 'customers', 'suppliers', 'payments', 'debts', 'integration', 'warehouse']
+const API_ASSET_BASE = API_BASE || ''
 const staffPageTitles = {
   dashboard: 'Tổng quan bán hàng',
   orders: 'Quản lý đơn hàng',
@@ -59,6 +61,7 @@ const demoProducts = [
 const LOCAL_ORDERS_KEY = 'retailerpLocalOrders'
 const LOCAL_STOCK_RESERVES_KEY = 'retailerpLocalStockReserves'
 const WALLET_STATE_KEY = 'retailerpWalletState'
+const TOPUP_REQUESTS_KEY = 'retailerpTopUpRequests'
 const ACTIVITY_LOG_KEY = 'retailerpActivityLog'
 
 const paymentMethods = [
@@ -70,10 +73,10 @@ const paymentMethods = [
 ]
 
 const memberTiers = [
-  { name: 'Thường', minSpent: 0, rate: 0, className: 'basic', badge: 'TH' },
-  { name: 'Bạc', minSpent: 2000000, rate: 2, className: 'silver', badge: 'B' },
-  { name: 'Vàng', minSpent: 5000000, rate: 5, className: 'gold', badge: 'V' },
-  { name: 'Kim cương', minSpent: 10000000, rate: 10, className: 'diamond', badge: 'KC' }
+  { code: 'DEFAULT', name: 'Thường', minSpent: 0, rate: 0, className: 'basic', badge: 'TH' },
+  { code: 'SILVER', name: 'Bạc', minSpent: 2000000, rate: 2, className: 'silver', badge: 'B' },
+  { code: 'GOLD', name: 'Vàng', minSpent: 5000000, rate: 5, className: 'gold', badge: 'V' },
+  { code: 'DIAMOND', name: 'Kim Cương', minSpent: 10000000, rate: 10, className: 'diamond', badge: 'KC' }
 ]
 
 const products = ref([])
@@ -91,7 +94,9 @@ const myOrders = ref([])
 const myOrdersLoading = ref(false)
 const selectedProduct = ref(null)
 const walletTransactions = ref([])
-const walletTopUpAmount = ref(200000)
+const showTopUpModal = ref(false)
+const walletTopUpForm = ref({ amount: 200000, paymentMethod: 'BankTransfer' })
+const topUpRequests = ref([])
 const activityLogs = ref([])
 
 const showAuthModal = ref(false)
@@ -106,7 +111,8 @@ const showStaffModal = ref(false)
 const staffUser = ref(null)
 const staffError = ref('')
 const staffBusy = ref(false)
-const staffLoginForm = ref({ username: 'sales01', role: 'Sales' })
+const staffTierSaving = ref({})
+const staffLoginForm = ref({ email: 'sales.user@khopro.local', password: 'Sales@123' })
 
 const checkout = ref({
   voucher: 'NONE',
@@ -122,6 +128,7 @@ const checkoutShipping = ref({
 
 const checkoutBusy = ref(false)
 const checkoutMessage = ref('')
+const showCheckoutPanel = ref(false)
 
 const orderLookup = ref({
   orderCode: '',
@@ -265,6 +272,14 @@ vouchers.splice(
 
 const activePage = computed(() => route.meta.page || 'shop')
 const isStaffPage = computed(() => staffPages.includes(activePage.value))
+const currentOrderDetail = computed(() => {
+  const id = String(route.params.id || '')
+  if (!id) return null
+  return [...myOrders.value, ...staffData.value.orders].find(order =>
+    String(order.orderId || order.id || '') === id ||
+    String(order.orderCode || '') === id
+  ) || null
+})
 const birthDays = Array.from({ length: 31 }, (_, index) => index + 1)
 const birthMonths = Array.from({ length: 12 }, (_, index) => index + 1)
 const birthYears = Array.from({ length: 70 }, (_, index) => new Date().getFullYear() - index)
@@ -326,8 +341,10 @@ const featuredProducts = computed(() => [...products.value]
 
 const cartTotal = computed(() => cart.value.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0))
 const walletBalance = computed(() => Number(currentUser.value?.walletBalance || 0))
-const currentMemberTier = computed(() => memberTierFor(Number(currentUser.value?.totalSpent || 0)))
-const nextMemberTier = computed(() => memberTiers.find(tier => tier.minSpent > Number(currentUser.value?.totalSpent || 0)) || null)
+const currentMemberTier = computed(() => memberTierForUser(currentUser.value))
+const nextMemberTier = computed(() => memberTiers.find(tier => tier.minSpent > currentMemberTier.value.minSpent) || null)
+const currentUserTopUpRequests = computed(() => topUpRequests.value.filter(request => request.customerKey === walletKeyFor()))
+const pendingTopUpCount = computed(() => topUpRequests.value.filter(request => request.status === 'pending').length)
 const tierProgressPercent = computed(() => {
   if (!nextMemberTier.value) return 100
   const spent = Number(currentUser.value?.totalSpent || 0)
@@ -367,7 +384,7 @@ const paymentStatusPreview = computed(() => {
   if (finalAmount.value <= 0 || paidAmount.value >= finalAmount.value) return 'Paid'
   return paidAmount.value > 0 ? 'Partial' : 'Unpaid'
 })
-const orderStatusPreview = computed(() => paidAmount.value >= finalAmount.value ? 'Paid' : 'Debt')
+const orderStatusPreview = computed(() => paidAmount.value >= finalAmount.value ? 'Completed' : 'Confirmed')
 const cartCount = computed(() => cart.value.reduce((sum, item) => sum + item.quantity, 0))
 const relatedProducts = computed(() => {
   if (!selectedProduct.value) return []
@@ -432,8 +449,52 @@ function productStock(product) {
 }
 
 function productImage(product) {
+  const image = product.productImage || product.image || product.imageUrl
+  if (image) return backendAssetUrl(image)
+
   const id = productId(product)
   return `/sarab/menu-${((id - 1) % 6) + 1}.jpg`
+}
+
+function backendAssetUrl(path) {
+  if (!path) return ''
+  if (/^(https?:|data:)/i.test(path)) return path
+  return `${API_ASSET_BASE}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+function normalizeWarehouseProduct(product, index, categoryMap = new Map()) {
+  const numericId = Number(product.productId || product.productID || product.productStockCacheId || 0) || index + 1
+  const categoryId = String(product.categoryId || product.categoryID || '')
+  const warehouseCategory = categoryMap.get(categoryId)
+  const warehouseCode = product.productCode || product.code || product.sku
+
+  return normalizeProduct({
+    ...product,
+    productId: numericId,
+    externalProductId: product.externalProductId || product.id || product.productExternalId || '',
+    productCode: warehouseCode || `SP${String(numericId).padStart(3, '0')}`,
+    productName: product.productName || product.name || `San pham ${numericId}`,
+    categoryName: product.categoryName || product.category || warehouseCategory || 'Kho',
+    sellingPrice: Number(product.sellingPrice ?? product.price ?? product.unitPrice ?? 0),
+    quantityAvailable: Number(product.quantityAvailable ?? product.stock ?? product.availableStock ?? 0),
+    sourceQuantityAvailable: Number(product.quantityAvailable ?? product.stock ?? product.availableStock ?? 0),
+    productImage: product.productImage || product.image || product.imageUrl || ''
+  })
+}
+
+function responseList(data) {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.items)) return data.items
+  if (Array.isArray(data?.products)) return data.products
+  if (Array.isArray(data?.data)) return data.data
+  if (Array.isArray(data?.value)) return data.value
+  return []
+}
+
+function categoryNameMap(categories = []) {
+  return new Map(categories
+    .map(category => [String(category.id || category.categoryId || ''), category.name || category.categoryName || ''])
+    .filter(([id, name]) => id && name))
 }
 
 function normalizeProduct(product) {
@@ -469,6 +530,22 @@ function memberTierFor(totalSpent) {
     .find(tier => Number(totalSpent || 0) >= tier.minSpent) || memberTiers[0]
 }
 
+function memberTierByName(name) {
+  const normalized = String(name || '').trim().toLowerCase()
+  return memberTiers.find(tier =>
+    tier.name.toLowerCase() === normalized ||
+    tier.code.toLowerCase() === normalized
+  ) || null
+}
+
+function memberTierForUser(user) {
+  return memberTierByName(user?.membershipTier) || memberTierFor(Number(user?.totalSpent || 0))
+}
+
+function customerMemberTier(customer) {
+  return memberTierForUser(customer).name
+}
+
 function tierRank(name) {
   return memberTiers.findIndex(tier => tier.name === name)
 }
@@ -484,8 +561,18 @@ function paymentMethodLabel(method) {
   return paymentMethods.find(item => item.value === method)?.label || method || 'Chưa chọn'
 }
 
+function openOrderDetail(order) {
+  const id = order?.orderId || order?.id || order?.orderCode
+  if (id) router.push(`/orders/${id}`)
+}
+
+function topUpPaymentMethodLabel(method) {
+  if (method === 'BankTransfer') return 'Chuyển khoản'
+  return method || 'Chuyển khoản'
+}
+
 function backendPaymentMethod(method) {
-  if (method === 'Wallet') return 'EWallet'
+  if (method === 'EWallet') return 'Wallet'
   if (method === 'Deposit') return 'Cash'
   return method || 'Cash'
 }
@@ -617,6 +704,191 @@ function addWalletTransaction(type, amount, note, orderCode = '') {
   saveWalletState()
 }
 
+function mapTopUpRequestFromApi(request) {
+  return {
+    id: request.requestCode || `TOPUP-${request.walletTopUpRequestId}`,
+    backendId: request.walletTopUpRequestId,
+    customerKey: String(request.customerId || ''),
+    customerId: request.customerId || null,
+    customerName: request.customerName || 'Khách hàng',
+    customerPhone: request.customerPhone || '',
+    amount: Number(request.amount || 0),
+    paymentMethod: request.paymentMethod || 'BankTransfer',
+    status: String(request.status || 'pending').toLowerCase(),
+    createdAt: request.requestedAt || new Date().toISOString(),
+    reviewedAt: request.reviewedAt || null,
+    reviewedBy: request.reviewedBy || '',
+    customerWalletBalance: request.customerWalletBalance
+  }
+}
+
+async function loadTopUpRequests() {
+  const localRequests = readJsonStorage(TOPUP_REQUESTS_KEY, [])
+  topUpRequests.value = localRequests
+
+  try {
+    const path = staffUser.value
+      ? '/api/WalletTopUps'
+      : currentUser.value?.customerId
+        ? `/api/WalletTopUps/customer/${currentUser.value.customerId}`
+        : ''
+    if (!path) return
+
+    const res = await api.get(path)
+    if (Array.isArray(res.data)) {
+      topUpRequests.value = res.data.map(mapTopUpRequestFromApi)
+    }
+  } catch {
+    topUpRequests.value = localRequests
+  }
+}
+
+function saveTopUpRequests() {
+  writeJsonStorage(TOPUP_REQUESTS_KEY, topUpRequests.value)
+}
+
+function saveWalletStateForCustomer(customerKey, balance, transactions) {
+  const states = readJsonStorage(WALLET_STATE_KEY, {})
+  states[String(customerKey || 'guest')] = {
+    balance: Number(balance || 0),
+    transactions: transactions || []
+  }
+  writeJsonStorage(WALLET_STATE_KEY, states)
+}
+
+async function submitTopUpRequest(amount) {
+  if (currentUser.value?.customerId) {
+    try {
+      const res = await api.post('/api/WalletTopUps', {
+        customerId: currentUser.value.customerId,
+        amount: Number(amount || 0),
+        paymentMethod: walletTopUpForm.value.paymentMethod,
+        note: 'Khách yêu cầu nạp ví'
+      })
+      const request = mapTopUpRequestFromApi(res.data)
+      topUpRequests.value = [request, ...topUpRequests.value.filter(item => item.id !== request.id)]
+      return request
+    } catch {
+      // Demo fallback below keeps the UI usable when the API is offline.
+    }
+  }
+
+  const request = {
+    id: `TOPUP-${Date.now()}`,
+    customerKey: walletKeyFor(),
+    customerId: currentUser.value?.customerId || null,
+    customerName: currentUser.value?.fullName || 'Khách hàng',
+    customerPhone: currentUser.value?.phone || '',
+    amount: Number(amount || 0),
+    paymentMethod: walletTopUpForm.value.paymentMethod,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    reviewedAt: null,
+    reviewedBy: ''
+  }
+  topUpRequests.value.unshift(request)
+  saveTopUpRequests()
+  return request
+}
+
+function updateStoredCustomerBalance(customerKey, amount) {
+  const demoCustomer = loadDemoCustomer()
+  if (demoCustomer && walletKeyFor(demoCustomer) === String(customerKey)) {
+    const updatedDemo = {
+      ...demoCustomer,
+      walletBalance: Number(demoCustomer.walletBalance || 0) + Number(amount || 0)
+    }
+    saveDemoCustomer(updatedDemo)
+    if (currentUser.value && walletKeyFor(currentUser.value) === String(customerKey)) {
+      currentUser.value = { ...currentUser.value, walletBalance: updatedDemo.walletBalance }
+      saveCustomerUser(currentUser.value)
+    }
+  }
+}
+
+async function approveTopUpRequest(request) {
+  if (!request || request.status !== 'pending') return
+
+  if (request.backendId) {
+    try {
+      const res = await api.post(`/api/WalletTopUps/${request.backendId}/approve`, {
+        reviewedBy: staffUser.value?.username || 'Nhân viên'
+      })
+      const updated = mapTopUpRequestFromApi(res.data)
+      topUpRequests.value = topUpRequests.value.map(item => item.id === request.id ? updated : item)
+      if (currentUser.value?.customerId && Number(currentUser.value.customerId) === Number(updated.customerId) && updated.customerWalletBalance != null) {
+        currentUser.value = { ...currentUser.value, walletBalance: Number(updated.customerWalletBalance || 0) }
+        saveCustomerUser(currentUser.value)
+      }
+      addActivityLog('wallet.approved', `Duyệt nạp ví ${formatMoney(updated.amount)} cho ${updated.customerName}`)
+      showNotice('Đã duyệt nạp tiền và cộng vào ví khách hàng.')
+      return
+    } catch (error) {
+      showNotice(error.response?.data?.message || 'Không duyệt được yêu cầu nạp ví.', 'bad')
+      return
+    }
+  }
+
+  const states = readJsonStorage(WALLET_STATE_KEY, {})
+  const state = states[request.customerKey] || { balance: 500000, transactions: [] }
+  const amount = Number(request.amount || 0)
+  const nextBalance = Number(state.balance || 0) + amount
+  const nextTransactions = [
+    {
+      id: Date.now(),
+      type: 'topup',
+      amount,
+      note: 'Nạp ví đã được nhân viên duyệt',
+      orderCode: request.id,
+      createdAt: new Date().toISOString()
+    },
+    ...(state.transactions || [])
+  ].slice(0, 12)
+
+  saveWalletStateForCustomer(request.customerKey, nextBalance, nextTransactions)
+  topUpRequests.value = topUpRequests.value.map(item =>
+    item.id === request.id
+      ? { ...item, status: 'approved', reviewedAt: new Date().toISOString(), reviewedBy: staffUser.value?.username || 'Nhân viên' }
+      : item
+  )
+  saveTopUpRequests()
+  updateStoredCustomerBalance(request.customerKey, amount)
+  if (currentUser.value && walletKeyFor() === request.customerKey) {
+    loadWalletState(currentUser.value)
+  }
+  addActivityLog('wallet.approved', `Duyệt nạp ví ${formatMoney(amount)} cho ${request.customerName}`)
+  showNotice('Đã duyệt nạp tiền và cộng vào ví khách hàng.')
+}
+
+async function rejectTopUpRequest(request) {
+  if (!request || request.status !== 'pending') return
+
+  if (request.backendId) {
+    try {
+      const res = await api.post(`/api/WalletTopUps/${request.backendId}/reject`, {
+        reviewedBy: staffUser.value?.username || 'Nhân viên'
+      })
+      const updated = mapTopUpRequestFromApi(res.data)
+      topUpRequests.value = topUpRequests.value.map(item => item.id === request.id ? updated : item)
+      addActivityLog('wallet.rejected', `Từ chối nạp ví ${formatMoney(updated.amount)} cho ${updated.customerName}`)
+      showNotice('Đã từ chối yêu cầu nạp tiền.')
+      return
+    } catch (error) {
+      showNotice(error.response?.data?.message || 'Không từ chối được yêu cầu nạp ví.', 'bad')
+      return
+    }
+  }
+
+  topUpRequests.value = topUpRequests.value.map(item =>
+    item.id === request.id
+      ? { ...item, status: 'rejected', reviewedAt: new Date().toISOString(), reviewedBy: staffUser.value?.username || 'Nhân viên' }
+      : item
+  )
+  saveTopUpRequests()
+  addActivityLog('wallet.rejected', `Từ chối nạp ví ${formatMoney(request.amount)} cho ${request.customerName}`)
+  showNotice('Đã từ chối yêu cầu nạp tiền.')
+}
+
 function addActivityLog(action, note, orderCode = '') {
   activityLogs.value.unshift({
     id: Date.now(),
@@ -729,8 +1001,24 @@ async function loadProducts() {
   productError.value = ''
 
   try {
+    const [warehouseRes, categoryRes] = await Promise.all([
+      api.get('/api/products'),
+      api.get('/api/categories').catch(() => ({ data: [] }))
+    ])
+    const warehouseList = responseList(warehouseRes.data)
+    const warehouseCategories = categoryNameMap(responseList(categoryRes.data))
+
+    if (warehouseList.length) {
+      products.value = warehouseList.map((product, index) => normalizeWarehouseProduct(product, index, warehouseCategories))
+      return
+    }
+  } catch {
+    // Fall back to the OrderApi cache below when the warehouse service is not reachable.
+  }
+
+  try {
     const res = await api.get('/api/ProductStockCaches')
-    const list = Array.isArray(res.data) ? res.data : []
+    const list = responseList(res.data)
     products.value = (list.length ? list : demoProducts).map(normalizeProduct)
   } catch (error) {
     products.value = demoProducts.map(normalizeProduct)
@@ -745,12 +1033,18 @@ function syncCartStock() {
   const synced = []
 
   for (const item of cart.value) {
-    const product = products.value.find(p => productId(p) === Number(item.productId))
+    const externalId = String(item.externalProductId || '')
+    const currentName = String(item.productName || '')
+    const product = products.value.find(p => externalId && String(p.externalProductId || p.id || '') === externalId)
+      || products.value.find(p => currentName && productName(p) === currentName)
+      || products.value.find(p => productId(p) === Number(item.productId))
     if (!product) continue
 
     const stock = productBaseStock(product)
     if (stock <= 0) continue
 
+    item.productId = productId(product)
+    item.externalProductId = product.externalProductId || product.id || ''
     item.productName = productName(product)
     item.productCode = productCode(product)
     item.categoryName = productCategory(product)
@@ -783,6 +1077,7 @@ function addToCart(product) {
   } else {
     cart.value.push({
       productId: id,
+      externalProductId: product.externalProductId || product.id || '',
       productCode: productCode(product),
       productName: productName(product),
       categoryName: productCategory(product),
@@ -813,12 +1108,25 @@ function updateCartQuantity(item, value) {
 
 function removeFromCart(id) {
   cart.value = cart.value.filter(item => Number(item.productId) !== Number(id))
+  if (cart.value.length === 0) showCheckoutPanel.value = false
   saveCustomerCart(cart.value)
 }
 
 function clearCart() {
   cart.value = []
+  showCheckoutPanel.value = false
   saveCustomerCart([])
+}
+
+function openCheckoutPanel() {
+  if (cart.value.length === 0) return
+  if (!currentUser.value) {
+    openAuth('login')
+    return
+  }
+  initCheckoutShipping()
+  checkoutMessage.value = ''
+  showCheckoutPanel.value = true
 }
 
 function initCheckoutShipping() {
@@ -878,6 +1186,7 @@ function setCurrentCustomer(customer) {
     dateOfBirth: customer.dateOfBirth || null,
     currentDebt: Number(customer.currentDebt || 0),
     totalSpent: Number(customer.totalSpent || 0),
+    membershipTier: customer.membershipTier || '',
     walletBalance: Number(customer.walletBalance ?? currentUser.value?.walletBalance ?? 500000)
   }
 
@@ -898,7 +1207,84 @@ function createLocalDemoCustomer(profile) {
     dateOfBirth: profile.dateOfBirth,
     currentDebt: 0,
     totalSpent: 0,
+    membershipTier: 'Thường',
     walletBalance: 500000
+  }
+}
+
+function validateRegisterForm() {
+  const fullName = registerForm.value.fullName.trim()
+  const phone = registerForm.value.phone.trim()
+  const email = registerForm.value.email.trim()
+  const address = registerForm.value.address.trim()
+  const password = registerForm.value.password
+
+  if (fullName.length < 2 || !/^[\p{L}\s'.-]+$/u.test(fullName)) {
+    return 'Ho ten chi duoc gom chu cai, dau cach va toi thieu 2 ky tu.'
+  }
+
+  if (!/^0\d{9}$/.test(phone)) {
+    return 'So dien thoai phai co 10 chu so va bat dau bang 0.'
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return 'Email khong dung dinh dang. Vi du: ten@example.com.'
+  }
+
+  if (address.length < 5) {
+    return 'Dia chi phai co toi thieu 5 ky tu.'
+  }
+
+  if (password.length < 8
+    || !/[A-Z]/.test(password)
+    || !/[a-z]/.test(password)
+    || !/\d/.test(password)
+    || !/[^A-Za-z0-9]/.test(password)) {
+    return 'Mat khau phai tu 8 ky tu, co chu hoa, chu thuong, so va ky tu dac biet.'
+  }
+
+  return ''
+}
+
+function registrationEmail() {
+  const email = registerForm.value.email.trim()
+  return email
+}
+
+async function checkRegistrationAvailability() {
+  const params = new URLSearchParams({
+    phone: registerForm.value.phone.trim(),
+    email: registrationEmail()
+  })
+
+  const res = await api.get(`/api/Customers/exists?${params.toString()}`)
+  if (res.data?.phoneExists) {
+    return 'So dien thoai nay da duoc dang ky.'
+  }
+  if (res.data?.emailExists) {
+    return 'Email nay da duoc dang ky.'
+  }
+  return ''
+}
+
+async function syncCustomerToUserService() {
+  const email = registrationEmail()
+
+  try {
+    await api.post('/api/auth/register', {
+      email,
+      password: registerForm.value.password,
+      name: registerForm.value.fullName.trim(),
+      storeName: 'OderApi',
+      phone: registerForm.value.phone.trim(),
+      province: ''
+    })
+  } catch (error) {
+    if (error.response?.status === 409) {
+      throw new Error(error.response?.data?.message || 'Email nay da duoc dang ky o quan ly nguoi dung.')
+    }
+    console.warn('Could not sync customer to User Service.', error)
+    throw new Error('Khong ket noi duoc Quan ly nguoi dung. Vui long chay nhom 3 roi thu lai.')
   }
 }
 
@@ -906,17 +1292,25 @@ async function registerCustomer() {
   authBusy.value = true
   authError.value = ''
 
-  if (!registerForm.value.fullName.trim() || !registerForm.value.phone.trim() || !registerForm.value.password.trim()) {
-    authError.value = 'Vui lòng nhập họ tên, số điện thoại và mật khẩu.'
+  const validationMessage = validateRegisterForm()
+  if (validationMessage) {
+    authError.value = validationMessage
     authBusy.value = false
     return
   }
   try {
-    console.log('registerForm:', JSON.stringify(registerForm.value))
+    const availabilityMessage = await checkRegistrationAvailability()
+    if (availabilityMessage) {
+      authError.value = availabilityMessage
+      return
+    }
+
+    await syncCustomerToUserService()
+
     const res = await api.post('/api/Customers', {
       fullName: registerForm.value.fullName.trim(),
       phone: registerForm.value.phone.trim(),
-      email: registerForm.value.email.trim(),
+      email: registrationEmail(),
       address: registerForm.value.address.trim(),
       gender: registerForm.value.gender.toString(),
       dateOfBirth: registerForm.value.dateOfBirth  ? new Date(registerForm.value.dateOfBirth).toISOString().split('T')[0]: null,
@@ -934,7 +1328,7 @@ async function registerCustomer() {
    console.log('Status:', error.response?.status)
    console.log('Data:', error.response?.data)
     console.log('Message:', error.message)
-  authError.value = error.response?.data?.message || 'Đăng ký thất bại. Vui lòng thử lại.'
+  authError.value = error.response?.data?.message || error.message || 'Dang ky that bai. Vui long thu lai.'
   } finally {
     authBusy.value = false
   }
@@ -964,7 +1358,7 @@ async function loginCustomer() {
     showNotice('Đăng nhập thành công.')
     await loadMyOrders()
   } catch (error) {
-    authError.value = error.response?.data?.message || 'Không tìm thấy khách hàng. Vui lòng đăng ký.'
+    authError.value = error.response?.data?.message || 'Khong tim thay khach hang. Vui long dang ky.'
   } finally {
     authBusy.value = false
   }
@@ -1009,7 +1403,7 @@ async function handleFileChange(event) {
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
-    avatarUrl.value = `http://localhost:5002${res.data.avatarUrl}`
+    avatarUrl.value = backendAssetUrl(res.data.avatarUrl)
     console.log('avatarUrl set to:', avatarUrl.value)
     console.log('res.data:', res.data)
     // Lưu vào currentUser để F5 không mất
@@ -1159,22 +1553,36 @@ function applyCheckoutSideEffects(order) {
   addActivityLog('order.created', `Tạo đơn ${paymentMethodLabel(order.paymentMethod)} - ${statusLabel(order.paymentStatus)}`, order.orderCode)
 }
 
-function topUpWallet() {
+function openTopUpModal() {
   if (!currentUser.value) {
     openAuth('login')
     return
   }
 
-  const amount = Math.max(0, Number(walletTopUpAmount.value || 0))
+  walletTopUpForm.value = { amount: 200000, paymentMethod: 'BankTransfer' }
+  showTopUpModal.value = true
+}
+
+function closeTopUpModal() {
+  showTopUpModal.value = false
+}
+
+async function topUpWallet() {
+  if (!currentUser.value) {
+    openAuth('login')
+    return
+  }
+
+  const amount = Math.max(0, Number(walletTopUpForm.value.amount || 0))
   if (amount <= 0) {
     showNotice('Vui lòng nhập số tiền nạp ví hợp lệ.', 'bad')
     return
   }
 
-  currentUser.value.walletBalance = walletBalance.value + amount
-  addWalletTransaction('topup', amount, 'Nạp tiền vào ví RetailERP')
-  addActivityLog('wallet.topup', `Khách nạp ví ${formatMoney(amount)}`)
-  showNotice('Đã nạp tiền vào ví demo.')
+  const request = await submitTopUpRequest(amount)
+  showTopUpModal.value = false
+  addActivityLog('wallet.requested', `Khách yêu cầu nạp ví ${formatMoney(amount)}`, request.id)
+  showNotice('Đã gửi yêu cầu nạp ví. Nhân viên duyệt xong hệ thống mới cộng tiền.')
 }
 
 function openProductDetail(product) {
@@ -1211,6 +1619,7 @@ async function submitCheckout() {
       paidAmount: paidAmount.value,
       items: cart.value.map(item => ({
         productId: item.productId,
+        externalProductId: item.externalProductId || '',
         quantity: item.quantity
       }))
     }
@@ -1287,7 +1696,7 @@ function avatarKey(user = currentUser.value) {
 
 function loadAvatar(user = currentUser.value) {
   if (user?.avatarUrl) {
-    avatarUrl.value = `http://localhost:5002${user.avatarUrl}`
+    avatarUrl.value = backendAssetUrl(user.avatarUrl)
     console.log('avatarUrl set to:', avatarUrl.value)
     return
   }
@@ -1427,7 +1836,7 @@ function parseStaffToken(token) {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]))
     return {
-      username: payload.unique_name || payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] || 'staff',
+      username: payload.email || payload.unique_name || payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] || 'staff',
       role: payload.role || 'Sales'
     }
   } catch {
@@ -1441,10 +1850,17 @@ async function loginStaff() {
 
   try {
     const res = await api.post('/api/auth/login', staffLoginForm.value)
-    setStaffToken(res.data.token)
+    const token = res.data.accessToken || res.data.token
+    const tokenUser = token ? parseStaffToken(token) : null
+
+    if (!token) {
+      throw new Error('Login response does not include a token.')
+    }
+
+    setStaffToken(token)
     staffUser.value = {
-      username: res.data.username || staffLoginForm.value.username,
-      role: res.data.role || staffLoginForm.value.role
+      username: res.data.user?.email || res.data.user?.name || res.data.username || tokenUser?.username || staffLoginForm.value.email,
+      role: res.data.user?.role || res.data.role || tokenUser?.role || 'Sales'
     }
     showStaffModal.value = false
     await loadStaffData()
@@ -1475,6 +1891,7 @@ async function safeList(path) {
 async function loadStaffData() {
   if (!staffUser.value) return
   staffLoading.value = true
+  await loadTopUpRequests()
 
   const [orders, customers, suppliers, payments, debts, outbox] = await Promise.all([
     safeList('/api/Orders'),
@@ -1496,13 +1913,52 @@ async function loadStaffData() {
   staffLoading.value = false
 }
 
+async function updateCustomerTier(customer, tierName) {
+  const id = customerId(customer)
+  if (!id || staffTierSaving.value[id]) return
+
+  const previousTier = customer.membershipTier || ''
+  customer.membershipTier = tierName
+  staffTierSaving.value = { ...staffTierSaving.value, [id]: true }
+
+  try {
+    const res = await api.put(`/api/Customers/${id}`, {
+      fullName: customerName(customer),
+      phone: customer.phone || '',
+      email: customer.email || '',
+      address: customer.address || '',
+      status: customer.status || 'Active',
+      membershipTier: tierName
+    })
+    const updated = res.data || { ...customer, membershipTier: tierName }
+    staffData.value.customers = staffData.value.customers.map(item =>
+      customerId(item) === id ? { ...item, ...updated } : item
+    )
+
+    if (currentUser.value && customerId(currentUser.value) === id) {
+      currentUser.value = { ...currentUser.value, membershipTier: updated.membershipTier || tierName }
+      saveCustomerUser(currentUser.value)
+    }
+
+    showNotice(`Đã cập nhật hạng ${tierName} cho ${customerName(customer)}.`)
+  } catch (error) {
+    customer.membershipTier = previousTier
+    staffData.value.customers = [...staffData.value.customers]
+    showNotice(error.response?.data?.message || 'Không thể cập nhật hạng thành viên.', 'bad')
+  } finally {
+    const next = { ...staffTierSaving.value }
+    delete next[id]
+    staffTierSaving.value = next
+  }
+}
+
 async function updateOrderStatus(order, status) {
   const id = order.orderId || order.id
   if (!id) return
 
   if (String(id).startsWith('local-') || order.isLocalDemo) {
     const updated = { ...order, orderStatus: status }
-    if (status === 'Paid') {
+    if (status === 'Completed') {
       updated.paymentStatus = 'Paid'
       updated.paidAmount = orderTotal(order)
       updated.debtAmount = 0
@@ -1593,7 +2049,10 @@ async function cancelOrder(order, staff = false) {
   }
 }
 
-watch(cart, () => saveCustomerCart(cart.value), { deep: true })
+watch(cart, () => {
+  if (cart.value.length === 0) showCheckoutPanel.value = false
+  saveCustomerCart(cart.value)
+}, { deep: true })
 
 watch(finalAmount, (amount) => {
   if (checkout.value.depositAmount > amount) {
@@ -1619,10 +2078,11 @@ watch(catalogPageCount, count => {
 })
 
 watch(activePage, async page => {
+  if (page !== 'cart') showCheckoutPanel.value = false
   if (page === 'shop' || page === 'cart') {
     await loadProducts()
   }
-  if (page === 'myOrders') {
+  if (page === 'myOrders' || page === 'orderDetail') {
     await loadMyOrders()
   }
   if (page === 'account') {
@@ -1633,6 +2093,9 @@ watch(activePage, async page => {
   if (staffPages.includes(page)) {
     if (!staffUser.value) openStaffAuth()
     else await loadStaffData()
+  }
+  if (page === 'orderDetail' && staffUser.value) {
+    await loadStaffData()
   }
 }, { immediate: false })
 
@@ -1681,11 +2144,11 @@ onMounted(async () => {
   else setStaffToken('')
 
   activityLogs.value = readJsonStorage(ACTIVITY_LOG_KEY, [])
+  await loadTopUpRequests()
    if (currentUser.value?.customerId) {
     try {
       // Gọi API GET lấy profile mới nhất từ DB (Thay URL đúng với API của bạn nhé)
       const res = await api.get(`/api/Customers/${currentUser.value.customerId}/profile`)
-      console.log('profile avatarUrl:', res.data.avatarUrl)
       // Cập nhật lại State tổng để các component khác cùng nhận dữ liệu mới
       setCurrentCustomer(res.data) 
       
@@ -1695,11 +2158,9 @@ onMounted(async () => {
         accountProfile.value.year = parseInt(parts[0])
         accountProfile.value.month = parseInt(parts[1])
         accountProfile.value.day = parseInt(parts[2])
-        console.log('after set:', accountProfile.value.year, accountProfile.value.month, accountProfile.value.day)
-        console.log('dateOfBirth from API:', res.data.dateOfBirth)
       }
       if (res.data.avatarUrl) {
-       avatarUrl.value = `http://localhost:5002${res.data.avatarUrl}`
+       avatarUrl.value = backendAssetUrl(res.data.avatarUrl)
       }
     } catch (err) {
       console.error("Không lấy được profile mới nhất:", err)
@@ -1710,8 +2171,10 @@ onMounted(async () => {
   }
 
   activityLogs.value = readJsonStorage(ACTIVITY_LOG_KEY, [])
+  await loadTopUpRequests()
   await loadProducts()
   if (currentUser.value) await loadMyOrders()
+  if (activePage.value === 'orderDetail' && staffUser.value) await loadStaffData()
 })
 </script>
 
@@ -1771,16 +2234,15 @@ onMounted(async () => {
         Đăng nhập
       </button>
       <div v-else class="user-chip" v-click-outside="() => showUserMenu = false" @mouseenter="showUserMenu = true" @mouseleave="showUserMenu = false">
-        <button type="button" class="user-chip-btn">
-          <span class="user-avatar-sm">
-            <img v-if="avatarUrl" :src="avatarUrl" style="width: 100%; height: 100%; object-fit: cover;" />
-            <span v-else>{{ (currentUser.fullName || '?')[0].toUpperCase() }}</span>
-          </span>
-          <span class="user-chip-name">{{ currentUser.fullName }}</span>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="transition: transform 0.2s;" :style="showUserMenu ? 'transform:rotate(180deg)' : ''">
-            <path d="M2 4l4 4 4-4" stroke="#666" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
+        <div :class="['rank-card', `rank-${currentMemberTier.className}`]">
+          <div class="rank-icon">
+            <Icon :icon="currentMemberTier.code === 'DIAMOND' ? 'mdi:diamond-stone' : currentMemberTier.code === 'PLATINUM' ? 'mdi:star-four-points' : currentMemberTier.code === 'GOLD' ? 'mdi:crown' : currentMemberTier.code === 'SILVER' ? 'mdi:medal' : 'mdi:account-heart'" />
+          </div>
+          <div class="rank-info">
+            <div class="user-name">{{ currentUser.fullName }}</div>
+            <div class="rank-name">Thành viên {{ currentMemberTier.name }}</div>
+          </div>
+        </div>
         <div v-if="showUserMenu" class="user-dropdown">
           <button class="udrop-item" type="button" @click="openPage('account', 'profile'); showUserMenu = false">
             Tài Khoản Của Tôi
@@ -1924,7 +2386,7 @@ onMounted(async () => {
       </section>
     </main>
 
-    <main v-else-if="activePage === 'cart'" class="page two-column-page">
+    <main v-else-if="activePage === 'cart'" :class="['page', showCheckoutPanel && cart.length > 0 ? 'two-column-page' : 'single-cart-page']">
       <section class="cart-panel">
         <div class="page-title">
           <span>Giỏ hàng</span>
@@ -1953,10 +2415,13 @@ onMounted(async () => {
             <b>{{ formatMoney(item.unitPrice * item.quantity) }}</b>
             <button class="remove-btn" type="button" @click="removeFromCart(item.productId)">Xóa</button>
           </article>
+          <div class="cart-next-action">
+            <button v-if="!showCheckoutPanel" class="primary-btn" type="button" @click="openCheckoutPanel">Mua hàng</button>
+          </div>
         </div>
       </section>
 
-      <aside class="checkout-panel">
+      <aside v-if="showCheckoutPanel && cart.length > 0" class="checkout-panel">
         <h2>Thanh toán</h2>
         <p v-if="!currentUser" class="soft-alert">Bạn cần đăng nhập hoặc đăng ký trước khi đặt hàng.</p>
 
@@ -1995,6 +2460,12 @@ onMounted(async () => {
             Số tiền ứng cọc
             <input v-model.number="checkout.depositAmount" type="number" min="0" :max="finalAmount" :disabled="!currentUser" />
           </label>
+          <div v-if="checkout.paymentMethod === 'QR'" style="text-align: center; margin: 16px 0; padding: 20px; background: #f8f9fa; border-radius: 12px; border: 1px dashed #ccc;">
+            <p style="margin-bottom: 12px; font-weight: 600; color: #333; font-size: 15px;">Quét mã QR để thanh toán</p>
+            <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=ThanhToan_RetailERP_' + finalAmount" alt="QR Code thanh toán" style="width: 180px; height: 180px; display: block; margin: 0 auto; border-radius: 8px; border: 2px solid #e0e0e0;" />
+            <p style="margin-top: 12px; color: #e74c3c; font-size: 18px; font-weight: 700;">{{ formatMoney(finalAmount) }}</p>
+            <small style="color: #888;">Mã QR có giá trị trong 15 phút</small>
+          </div>
         </div>
 
         <div class="money-box">
@@ -2090,9 +2561,59 @@ onMounted(async () => {
                 </td>
                 <td><span :class="['status-pill', statusClass(order.orderStatus)]">{{ statusLabel(order.orderStatus) }}</span></td>
                 <td class="table-actions">
+                  <button type="button" @click="openOrderDetail(order)">Xem</button>
                   <button v-if="canCancelOrder(order)" type="button" @click="cancelOrder(order)">X Hủy</button>
                   <span v-else>✓ Đã xử lý</span>
                 </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <main v-else-if="activePage === 'orderDetail'" class="page">
+      <div class="page-title">
+        <span>Don hang</span>
+        <h1>Chi tiet don hang</h1>
+      </div>
+      <section v-if="!currentOrderDetail" class="panel">
+        <div class="empty-state compact">
+          <h3>Khong tim thay don hang</h3>
+          <p>Hay tai lai danh sach don hang hoac quay ve trang lich su don.</p>
+          <button class="primary-btn" type="button" @click="openPage('myOrders')">Quay lai</button>
+        </div>
+      </section>
+      <section v-else class="panel order-detail-panel">
+        <div class="detail-facts">
+          <p><span>Ma don</span><b>{{ currentOrderDetail.orderCode }}</b></p>
+          <p><span>Khach hang</span><b>{{ currentOrderDetail.customerName || currentOrderDetail.customerId }}</b></p>
+          <p><span>Ngay dat</span><b>{{ formatDateTime(currentOrderDetail.orderDate) }}</b></p>
+          <p><span>Thanh toan</span><b>{{ statusLabel(paymentStatusFor(currentOrderDetail)) }}</b></p>
+          <p><span>Trang thai</span><b>{{ statusLabel(currentOrderDetail.orderStatus) }}</b></p>
+          <p><span>Tong tien</span><b>{{ formatMoney(orderTotal(currentOrderDetail)) }}</b></p>
+          <p><span>Da tra</span><b>{{ formatMoney(currentOrderDetail.paidAmount) }}</b></p>
+          <p><span>Cong no</span><b>{{ formatMoney(orderDebt(currentOrderDetail)) }}</b></p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>San pham</th>
+                <th>So luong</th>
+                <th>Don gia</th>
+                <th>Giam gia</th>
+                <th>Thanh tien</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in orderItems(currentOrderDetail)" :key="item.orderDetailId || item.orderItemId || item.productId">
+                <td>{{ item.productName || item.name }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>{{ formatMoney(item.unitPrice) }}</td>
+                <td>{{ formatMoney(item.discountAmount || 0) }}</td>
+                <td>{{ formatMoney(item.subTotal || item.lineTotal || (Number(item.unitPrice || 0) * Number(item.quantity || 0))) }}</td>
               </tr>
             </tbody>
           </table>
@@ -2239,9 +2760,11 @@ onMounted(async () => {
             <span>Ví RetailERP</span>
             <b>{{ formatMoney(walletBalance) }}</b>
             <div class="wallet-topup">
-              <input v-model.number="walletTopUpAmount" type="number" min="0" placeholder="Nhập số tiền" />
-              <button type="button" @click="topUpWallet">Nạp ví</button>
+              <button type="button" @click="openTopUpModal">Gửi yêu cầu nạp</button>
             </div>
+            <p v-if="currentUserTopUpRequests.some(request => request.status === 'pending')" class="wallet-pending-note">
+              Có {{ currentUserTopUpRequests.filter(request => request.status === 'pending').length }} yêu cầu nạp đang chờ nhân viên duyệt.
+            </p>
           </article>
           <article class="debt-card">
             <span>Công nợ hiện tại</span>
@@ -2256,6 +2779,15 @@ onMounted(async () => {
             <span>{{ transaction.note }}</span>
             <b :class="{ minus: transaction.amount < 0 }">{{ formatMoney(transaction.amount) }}</b>
             <small>{{ formatDateTime(transaction.createdAt) }}</small>
+          </div>
+        </div>
+
+        <div v-if="activeAccountTab === 'wallet' && currentUserTopUpRequests.length" class="wallet-history">
+          <h3>Yêu cầu nạp tiền</h3>
+          <div v-for="request in currentUserTopUpRequests.slice(0, 4)" :key="request.id" class="wallet-transaction">
+            <span>{{ request.id }}</span>
+            <b>{{ formatMoney(request.amount) }}</b>
+            <small>{{ topUpPaymentMethodLabel(request.paymentMethod) }} · {{ request.status === 'pending' ? 'Chờ duyệt' : request.status === 'approved' ? 'Đã duyệt' : 'Từ chối' }} · {{ formatDateTime(request.createdAt) }}</small>
           </div>
         </div>
 
@@ -2408,8 +2940,9 @@ onMounted(async () => {
                 </td>
                 <td><span :class="['status-pill', statusClass(order.orderStatus)]">{{ statusLabel(order.orderStatus) }}</span></td>
                 <td class="table-actions">
+                  <button type="button" @click="openOrderDetail(order)">Xem</button>
                   <button @click="updateOrderStatus(order, 'Confirmed')">✓ Xác nhận</button>
-                  <button @click="updateOrderStatus(order, 'Paid')">✓ Đã thanh toán</button>
+                  <button @click="updateOrderStatus(order, 'Completed')">✓ Đã thanh toán</button>
                   <button v-if="canCancelOrder(order)" @click="cancelOrder(order, true)">X Hủy</button>
                 </td>
               </tr>
@@ -2419,13 +2952,25 @@ onMounted(async () => {
 
         <div v-else-if="activePage === 'customers'" class="table-wrap">
           <table>
-            <thead><tr><th>Mã KH</th><th>Họ tên</th><th>SĐT</th><th>Email</th><th>Công nợ</th></tr></thead>
+            <thead><tr><th>Mã KH</th><th>Họ tên</th><th>SĐT</th><th>Email</th><th>Hạng thành viên</th><th>Công nợ</th></tr></thead>
             <tbody>
               <tr v-for="customer in staffData.customers" :key="customer.customerId || customer.id">
                 <td>{{ customer.customerCode }}</td>
                 <td>{{ customerName(customer) }}</td>
                 <td>{{ customer.phone }}</td>
                 <td>{{ customer.email }}</td>
+                <td>
+                  <select
+                    class="tier-select"
+                    :value="customerMemberTier(customer)"
+                    :disabled="staffTierSaving[customerId(customer)]"
+                    @change="updateCustomerTier(customer, $event.target.value)"
+                  >
+                    <option v-for="tier in memberTiers" :key="tier.name" :value="tier.name">
+                      {{ tier.name }} - {{ tier.rate }}%
+                    </option>
+                  </select>
+                </td>
                 <td>{{ formatMoney(customer.currentDebt) }}</td>
               </tr>
             </tbody>
@@ -2434,7 +2979,7 @@ onMounted(async () => {
 
         <div v-else-if="activePage === 'suppliers'" class="table-wrap">
           <table>
-            <thead><tr><th>Mã NCC</th><th>Tên</th><th>Liên hệ</th><th>Điện thoại</th><th>Email</th></tr></thead>
+            <thead><tr><th>Ma NCC</th><th>Ten</th><th>Lien he</th><th>Dien thoai</th><th>Email</th><th>MST</th><th>Ghi chu</th></tr></thead>
             <tbody>
               <tr v-for="supplier in staffData.suppliers" :key="supplier.supplierId || supplier.id">
                 <td>{{ supplier.supplierCode }}</td>
@@ -2442,24 +2987,65 @@ onMounted(async () => {
                 <td>{{ supplier.contactPerson }}</td>
                 <td>{{ supplier.phone }}</td>
                 <td>{{ supplier.email }}</td>
+                <td>{{ supplier.taxCode || '-' }}</td>
+                <td>{{ supplier.note || '-' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div v-else-if="activePage === 'payments'" class="table-wrap">
-          <table>
-            <thead><tr><th>Mã TT</th><th>Đơn</th><th>Phương thức</th><th>Số tiền</th><th>Ngày</th></tr></thead>
-            <tbody>
-              <tr v-for="payment in staffData.payments" :key="payment.paymentId || payment.id">
-                <td>{{ payment.paymentCode }}</td>
-                <td>{{ payment.orderId }}</td>
-                <td>{{ payment.paymentMethod }}</td>
-                <td>{{ formatMoney(payment.amount) }}</td>
-                <td>{{ formatDateTime(payment.paymentDate) }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else-if="activePage === 'payments'" class="payments-stack">
+          <div class="table-wrap">
+            <div class="table-caption">
+              <h3>Yêu cầu nạp ví</h3>
+              <span>{{ pendingTopUpCount }} chờ duyệt</span>
+            </div>
+            <table>
+              <thead><tr><th>Mã yêu cầu</th><th>Khách</th><th>SĐT</th><th>Số tiền</th><th>Hình thức</th><th>Trạng thái</th><th>Ngày gửi</th><th>Thao tác</th></tr></thead>
+              <tbody>
+                <tr v-if="topUpRequests.length === 0">
+                  <td colspan="8">Chưa có yêu cầu nạp tiền.</td>
+                </tr>
+                <tr v-for="request in topUpRequests" :key="request.id">
+                  <td>{{ request.id }}</td>
+                  <td>{{ request.customerName }}</td>
+                  <td>{{ request.customerPhone }}</td>
+                  <td>{{ formatMoney(request.amount) }}</td>
+                  <td>{{ topUpPaymentMethodLabel(request.paymentMethod) }}</td>
+                  <td>
+                    <span :class="['status-pill', request.status === 'approved' ? 'ok' : request.status === 'rejected' ? 'bad' : 'warn']">
+                      {{ request.status === 'pending' ? 'Chờ duyệt' : request.status === 'approved' ? 'Đã duyệt' : 'Từ chối' }}
+                    </span>
+                  </td>
+                  <td>{{ formatDateTime(request.createdAt) }}</td>
+                  <td class="table-actions">
+                    <button v-if="request.status === 'pending'" type="button" @click="approveTopUpRequest(request)">✓ Duyệt</button>
+                    <button v-if="request.status === 'pending'" type="button" @click="rejectTopUpRequest(request)">X Từ chối</button>
+                    <small v-else>{{ request.reviewedBy || 'Nhân viên' }} · {{ formatDateTime(request.reviewedAt) }}</small>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap">
+            <div class="table-caption">
+              <h3>Thanh toán đơn hàng</h3>
+              <span>{{ staffData.payments.length }} giao dịch</span>
+            </div>
+            <table>
+              <thead><tr><th>Mã TT</th><th>Đơn</th><th>Phương thức</th><th>Số tiền</th><th>Ngày</th></tr></thead>
+              <tbody>
+                <tr v-for="payment in staffData.payments" :key="payment.paymentId || payment.id">
+                  <td>{{ payment.paymentCode }}</td>
+                  <td>{{ payment.orderId }}</td>
+                  <td>{{ payment.paymentMethod }}</td>
+                  <td>{{ formatMoney(payment.amount) }}</td>
+                  <td>{{ formatDateTime(payment.paymentDate) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div v-else-if="activePage === 'debts'" class="table-wrap">
@@ -2491,6 +3077,32 @@ onMounted(async () => {
         </div>
       </section>
     </main>
+
+    <div v-if="showTopUpModal" class="modal-backdrop" @click.self="closeTopUpModal">
+      <section class="modal-card topup-modal">
+        <button class="modal-close" type="button" @click="closeTopUpModal">×</button>
+        <span class="eyebrow">Nạp ví RetailERP</span>
+        <h2>Gửi yêu cầu nạp tiền</h2>
+        <div class="topup-form">
+          <label>
+            Số tiền cần nạp
+            <input v-model.number="walletTopUpForm.amount" type="number" min="10000" step="10000" placeholder="Nhập số tiền cần nạp" />
+          </label>
+          <label>
+            Hình thức thanh toán
+            <select v-model="walletTopUpForm.paymentMethod" disabled>
+              <option value="BankTransfer">Chuyển khoản</option>
+            </select>
+          </label>
+          <div class="topup-bank-box">
+            <span>Thanh toán chuyển khoản</span>
+            <b>{{ formatMoney(walletTopUpForm.amount) }}</b>
+            <small>Nhân viên sẽ kiểm tra giao dịch và duyệt trước khi cộng tiền vào ví.</small>
+          </div>
+          <button class="primary-btn full" type="button" @click="topUpWallet">Gửi yêu cầu</button>
+        </div>
+      </section>
+    </div>
 
     <div v-if="selectedProduct" class="modal-backdrop" @click.self="closeProductDetail">
       <section class="modal-card product-modal">
@@ -2542,11 +3154,11 @@ onMounted(async () => {
         </div>
 
         <div v-else class="form-grid">
-          <label>Họ tên<input v-model="registerForm.fullName" type="text" /></label>
-          <label>Số điện thoại<input v-model="registerForm.phone" type="text" /></label>
-          <label>Email<input v-model="registerForm.email" type="email" /></label>
-          <label>Địa chỉ<input v-model="registerForm.address" type="text" /></label>
-          <label>Mật khẩu<input v-model="registerForm.password" type="password" /></label>
+          <label>Họ tên<input v-model="registerForm.fullName" type="text" autocomplete="name" required minlength="2" /></label>
+          <label>Số điện thoại<input v-model="registerForm.phone" type="tel" autocomplete="tel" required pattern="0[0-9]{9}" /></label>
+          <label>Email<input v-model="registerForm.email" type="email" autocomplete="email" required /></label>
+          <label>Địa chỉ<input v-model="registerForm.address" type="text" autocomplete="street-address" required minlength="5" /></label>
+          <label>Mật khẩu<input v-model="registerForm.password" type="password" autocomplete="new-password" required minlength="8" /></label>
           <button class="primary-btn full" type="button" :disabled="authBusy" @click="registerCustomer">
             {{ authBusy ? 'Đang đăng ký...' : 'Đăng ký' }}
           </button>
@@ -2562,7 +3174,9 @@ onMounted(async () => {
         <button class="modal-close" type="button" @click="showStaffModal = false">×</button>
         <span class="eyebrow">Nhân viên</span>
         <h2>Đăng nhập quản trị</h2>
-        <div class="form-grid">
+        <div class="form-grid staff-login-grid">
+          <label>Email nhan vien<input v-model="staffLoginForm.email" type="email" /></label>
+          <label>Mat khau<input v-model="staffLoginForm.password" type="password" /></label>
           <label>Tên đăng nhập<input v-model="staffLoginForm.username" type="text" /></label>
           <label>
             Vai trò
@@ -2633,3 +3247,5 @@ onMounted(async () => {
 </template>
 
 <style scoped src="./App.css"></style>
+
+

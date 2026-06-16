@@ -39,6 +39,9 @@ namespace OrderApi.Services
             if (dto.DiscountAmount < 0)
                 throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
 
+            if (dto.DiscountValue < 0)
+                throw new InvalidOperationException("Gia tri chiet khau khong duoc nho hon 0.");
+
             decimal totalAmount = 0;
 
             foreach (var item in dto.Items)
@@ -62,14 +65,23 @@ namespace OrderApi.Services
                 totalAmount += item.Quantity * unitPrice;
             }
 
-            if (dto.DiscountAmount > totalAmount)
+            var discountType = OrderService.NormalizeDiscountType(dto.DiscountType);
+            var discountAmount = OrderService.CalculateDiscountAmount(
+                totalAmount,
+                discountType,
+                dto.DiscountValue,
+                dto.DiscountAmount);
+
+            if (discountAmount > totalAmount)
                 throw new InvalidOperationException("Chiết khấu không được lớn hơn tổng tiền.");
 
             return new CalculateTotalResponseDto
             {
                 TotalAmount = totalAmount,
-                DiscountAmount = dto.DiscountAmount,
-                FinalAmount = totalAmount - dto.DiscountAmount
+                DiscountAmount = discountAmount,
+                DiscountType = discountType,
+                DiscountValue = dto.DiscountValue > 0 ? dto.DiscountValue : dto.DiscountAmount,
+                FinalAmount = totalAmount - discountAmount
             };
         }
 
@@ -86,6 +98,8 @@ namespace OrderApi.Services
                         OrderCode = existingOrder.OrderCode,
                         TotalAmount = existingOrder.TotalAmount,
                         DiscountAmount = existingOrder.DiscountAmount,
+                        DiscountType = existingOrder.DiscountType,
+                        DiscountValue = existingOrder.DiscountValue,
                         FinalAmount = existingOrder.FinalAmount,
                         PaidAmount = existingOrder.PaidAmount,
                         DebtAmount = existingOrder.DebtAmount,
@@ -101,8 +115,23 @@ namespace OrderApi.Services
             if (dto.DiscountAmount < 0)
                 throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
 
+            if (dto.DiscountValue < 0)
+                throw new InvalidOperationException("Gia tri chiet khau khong duoc nho hon 0.");
+
             if (dto.PaidAmount < 0)
                 throw new InvalidOperationException("Số tiền thanh toán không được nhỏ hơn 0.");
+
+            var inventoryRequests = dto.Items
+                .Select(i => new ProductInventoryRequest
+                {
+                    ProductId = i.ProductId,
+                    ExternalProductId = i.ExternalProductId,
+                    Quantity = i.Quantity
+                })
+                .ToList();
+            var inventoryCheck = await _productCatalogClient.CheckInventoryAsync(inventoryRequests);
+            if (!inventoryCheck.IsAvailable)
+                throw new InvalidOperationException(BuildInsufficientStockMessage(inventoryCheck));
 
             using var transaction = await _dbContext.Database.BeginTransactionAsync();
 
@@ -115,7 +144,7 @@ namespace OrderApi.Services
                 if (item.Quantity <= 0)
                     throw new InvalidOperationException("Số lượng sản phẩm phải lớn hơn 0.");
 
-                var catalogProduct = await _productCatalogClient.GetProductAsync(item.ProductId)
+                var catalogProduct = await _productCatalogClient.GetProductAsync(item.ProductId, item.ExternalProductId)
                     ?? throw new InvalidOperationException($"Product {item.ProductId} stock info not found");
 
                 if (catalogProduct.QuantityAvailable < item.Quantity)
@@ -145,37 +174,29 @@ namespace OrderApi.Services
                 cachedStock.QuantityAvailable = catalogProduct.QuantityAvailable;
                 cachedStock.IsDeleted = false;
 
-                var stock = await _dbContext.ProductStockCaches
-                    .FirstOrDefaultAsync(p => p.ProductId == item.ProductId)
-                    ?? throw new InvalidOperationException($"Product {item.ProductId} stock info not found");
-
-                if (stock.QuantityAvailable < item.Quantity)
+                if (cachedStock.QuantityAvailable < item.Quantity)
                     throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}");
 
-                stock.QuantityAvailable -= item.Quantity;
-                if (stock.QuantityAvailable <= 0)
+                if (cachedStock.QuantityAvailable <= 0)
+                    cachedStock.StockStatus = StockStatus.OutOfStock;
+                else if (cachedStock.QuantityAvailable <= 5)
                 {
-                    stock.QuantityAvailable = 0;
-                    stock.StockStatus = StockStatus.OutOfStock;
-                }
-                else if (stock.QuantityAvailable <= 5)
-                {
-                    stock.StockStatus = StockStatus.LowStock;
+                    cachedStock.StockStatus = StockStatus.LowStock;
                 }
                 else
                 {
-                    stock.StockStatus = StockStatus.InStock;
+                    cachedStock.StockStatus = StockStatus.InStock;
                 }
 
-                stock.LastUpdatedAt = DateTime.UtcNow;
+                cachedStock.LastUpdatedAt = DateTime.UtcNow;
 
                 items.Add(new CreateOrderDetailDto
                 {
                     ProductId = item.ProductId,
-                    ProductCode = stock.ProductCode,
-                    ProductName = stock.ProductName,
+                    ProductCode = cachedStock.ProductCode,
+                    ProductName = cachedStock.ProductName,
                     Quantity = item.Quantity,
-                    UnitPrice = stock.SellingPrice,
+                    UnitPrice = cachedStock.SellingPrice,
                     DiscountAmount = 0
                 });
             }
@@ -187,16 +208,53 @@ namespace OrderApi.Services
                 CustomerName = customer.FullName,
                 Items = items,
                 DiscountAmount = dto.DiscountAmount,
-                CreatedBy = string.IsNullOrWhiteSpace(createdBy) ? "sales01" : createdBy
+                DiscountType = dto.DiscountType,
+                DiscountValue = dto.DiscountValue,
+                CreatedByUserId = ResolveCreatedByUserId(createdBy)
             };
 
             // Create without duplicate outbox — we'll enqueue after payment/debt updates
             var orderEntity = await CreateOrderWithoutOutboxAsync(createOrderDto);
 
+            var deducted = await _productCatalogClient.DeductInventoryAsync(inventoryRequests);
+            if (!deducted)
+            {
+                orderEntity.OrderStatus = OrderStatus.Cancelled;
+                orderEntity.UpdatedAt = DateTime.UtcNow;
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return new CheckoutResponseDto
+                {
+                    OrderId = orderEntity.OrderId,
+                    OrderCode = orderEntity.OrderCode,
+                    TotalAmount = orderEntity.TotalAmount,
+                    DiscountAmount = orderEntity.DiscountAmount,
+                    DiscountType = orderEntity.DiscountType,
+                    DiscountValue = orderEntity.DiscountValue,
+                    FinalAmount = orderEntity.FinalAmount,
+                    PaidAmount = orderEntity.PaidAmount,
+                    DebtAmount = orderEntity.DebtAmount,
+                    PaymentStatus = orderEntity.PaymentStatus.ToString(),
+                    OrderStatus = orderEntity.OrderStatus.ToString()
+                };
+            }
+
+            var isWalletPayment = Enum.TryParse<PaymentMethod>(dto.PaymentMethod, true, out var parsedPaymentMethod)
+                && parsedPaymentMethod == PaymentMethod.Wallet;
+
             if (dto.PaidAmount > 0)
             {
                 if (dto.PaidAmount > orderEntity.FinalAmount - orderEntity.PaidAmount)
                     throw new InvalidOperationException("Số tiền thanh toán không được vượt quá số tiền còn lại.");
+
+                if (isWalletPayment)
+                {
+                    if (customer.WalletBalance < dto.PaidAmount)
+                        throw new InvalidOperationException("Số dư ví không đủ để thanh toán.");
+
+                    customer.WalletBalance -= dto.PaidAmount;
+                }
 
                 await _paymentService.RecordPaymentAsync(orderEntity.OrderId, new DTOs.Payments.CreatePaymentDto
                 {
@@ -224,14 +282,14 @@ namespace OrderApi.Services
                 _dbContext.Debts.Add(debt);
 
                 orderEntity.DebtAmount = debtAmount;
-                orderEntity.OrderStatus = OrderStatus.Debt;
+                orderEntity.OrderStatus = OrderStatus.Confirmed;
                 orderEntity.PaymentStatus = orderEntity.PaidAmount > 0 ? PaymentStatus.Partial : PaymentStatus.Unpaid;
 
                 customer.CurrentDebt += debtAmount;
             }
             else
             {
-                orderEntity.OrderStatus = OrderStatus.Paid;
+                orderEntity.OrderStatus = OrderStatus.Completed;
                 orderEntity.PaymentStatus = PaymentStatus.Paid;
                 orderEntity.DebtAmount = 0;
             }
@@ -253,6 +311,8 @@ namespace OrderApi.Services
                 OrderCode = orderEntity.OrderCode,
                 TotalAmount = orderEntity.TotalAmount,
                 DiscountAmount = orderEntity.DiscountAmount,
+                DiscountType = orderEntity.DiscountType,
+                DiscountValue = orderEntity.DiscountValue,
                 FinalAmount = orderEntity.FinalAmount,
                 PaidAmount = orderEntity.PaidAmount,
                 DebtAmount = orderEntity.DebtAmount,
@@ -269,9 +329,10 @@ namespace OrderApi.Services
                 OrderCode = orderCode,
                 IdempotencyKey = dto.IdempotencyKey,
                 CustomerId = dto.CustomerId,
-                CreatedBy = dto.CreatedBy,
+                CreatedByUserId = dto.CreatedByUserId,
                 OrderDate = DateTime.UtcNow,
-                DiscountAmount = dto.DiscountAmount,
+                DiscountType = OrderService.NormalizeDiscountType(dto.DiscountType),
+                DiscountValue = dto.DiscountValue,
                 OrderStatus = OrderStatus.Pending,
                 PaymentStatus = PaymentStatus.Unpaid,
             };
@@ -293,12 +354,38 @@ namespace OrderApi.Services
                 totalAmount += detail.SubTotal;
             }
 
+            var discountAmount = OrderService.CalculateDiscountAmount(
+                totalAmount,
+                order.DiscountType,
+                dto.DiscountValue,
+                dto.DiscountAmount);
+
+            if (discountAmount > totalAmount)
+                throw new InvalidOperationException("Chiet khau khong duoc lon hon tong tien.");
+
             order.TotalAmount = totalAmount;
-            order.FinalAmount = totalAmount - dto.DiscountAmount;
+            order.DiscountValue = dto.DiscountValue > 0 ? dto.DiscountValue : dto.DiscountAmount;
+            order.DiscountAmount = discountAmount;
+            order.FinalAmount = totalAmount - discountAmount;
 
             _dbContext.Orders.Add(order);
             await _dbContext.SaveChangesAsync();
             return order;
+        }
+
+        private static int ResolveCreatedByUserId(string? createdBy)
+        {
+            return int.TryParse(createdBy, out var userId) && userId > 0 ? userId : 1;
+        }
+
+        private static string BuildInsufficientStockMessage(InventoryCheckResult check)
+        {
+            if (check.Shortages.Count == 0)
+                return "InsufficientStock";
+
+            var details = string.Join(", ", check.Shortages.Select(s =>
+                $"ProductId={s.ProductId}, requested={s.RequestedQuantity}, available={s.AvailableQuantity}"));
+            return $"InsufficientStock: {details}";
         }
     }
 }

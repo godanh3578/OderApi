@@ -21,6 +21,9 @@ namespace OrderApi.Models
         [StringLength(200)]
         public string ProductName { get; set; } = "";
 
+        [StringLength(500)]
+        public string? ProductImage { get; set; }
+
         [Range(1, int.MaxValue)]
         public int Quantity { get; set; }
 
@@ -30,7 +33,6 @@ namespace OrderApi.Models
         [Range(0, double.MaxValue)]
         public decimal DiscountAmount { get; set; } = 0;
 
-        [Range(0, double.MaxValue)]
         public decimal SubTotal { get; set; }
     }
 }

@@ -65,10 +65,10 @@ namespace OrderApi.Migrations
 
                     b.HasKey("AuditLogId");
 
-                    b.ToTable("AuditLogs", (string)null);
+                    b.ToTable("AuditLogs");
                 });
 
-            modelBuilder.Entity("OrderApi.Models.Customer", b =>
+            modelBuilder.Entity("OrderApi.Models.Customers", b =>
                 {
                     b.Property<int>("CustomerId")
                         .ValueGeneratedOnAdd()
@@ -81,10 +81,15 @@ namespace OrderApi.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("AvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<decimal>("CurrentDebt")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("CustomerCode")
@@ -93,7 +98,8 @@ namespace OrderApi.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime?>("DateOfBirth")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasColumnName("DateOfBirth");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -113,6 +119,11 @@ namespace OrderApi.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<string>("MembershipTier")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -122,17 +133,22 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("TotalSpent")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<decimal>("WalletBalance")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.HasKey("CustomerId");
 
                     b.HasIndex("CustomerCode")
                         .IsUnique();
 
-                    b.ToTable("Customers", (string)null);
+                    b.ToTable("Customers");
                 });
 
             modelBuilder.Entity("OrderApi.Models.Debt", b =>
@@ -150,6 +166,7 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("DebtAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("DebtStatus")
@@ -162,7 +179,14 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("PaidAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("RemainingAmount")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasComputedColumnSql("[DebtAmount] - [PaidAmount]", true);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -174,7 +198,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("OrderId")
                         .IsUnique();
 
-                    b.ToTable("Debts", (string)null);
+                    b.ToTable("CustomerDebts", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.Order", b =>
@@ -188,22 +212,35 @@ namespace OrderApi.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("int");
 
                     b.Property<int>("CustomerId")
                         .HasColumnType("int");
 
                     b.Property<decimal>("DebtAmount")
-                        .HasColumnType("decimal(18,2)");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasComputedColumnSql("[TotalAmount] - [PaidAmount]", true);
 
                     b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("DiscountType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<decimal>("DiscountValue")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("FinalAmount")
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("TotalAmount");
 
                     b.Property<string>("IdempotencyKey")
                         .HasMaxLength(100)
@@ -224,13 +261,19 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("PaidAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("PaymentStatus")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("StockRestoredAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<decimal>("TotalAmount")
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("SubTotal");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -242,18 +285,20 @@ namespace OrderApi.Migrations
                     b.HasIndex("OrderCode")
                         .IsUnique();
 
-                    b.ToTable("Orders", (string)null);
+                    b.ToTable("Orders");
                 });
 
             modelBuilder.Entity("OrderApi.Models.OrderDetail", b =>
                 {
                     b.Property<int>("OrderDetailId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasColumnName("OrderItemId");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OrderDetailId"));
 
                     b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("OrderId")
@@ -267,6 +312,10 @@ namespace OrderApi.Migrations
                     b.Property<int>("ProductId")
                         .HasColumnType("int");
 
+                    b.Property<string>("ProductImage")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("ProductName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -276,16 +325,21 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("SubTotal")
-                        .HasColumnType("decimal(18,2)");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("LineTotal")
+                        .HasComputedColumnSql("[UnitPrice] * [Quantity] - [DiscountAmount]", true);
 
                     b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("OrderDetailId");
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("OrderDetails", (string)null);
+                    b.ToTable("OrderItems", (string)null);
                 });
 
             modelBuilder.Entity("OrderApi.Models.OutboxMessage", b =>
@@ -319,7 +373,7 @@ namespace OrderApi.Migrations
 
                     b.HasKey("OutboxMessageId");
 
-                    b.ToTable("OutboxMessages", (string)null);
+                    b.ToTable("OutboxMessages");
                 });
 
             modelBuilder.Entity("OrderApi.Models.Payment", b =>
@@ -331,6 +385,7 @@ namespace OrderApi.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PaymentId"));
 
                     b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -365,7 +420,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("PaymentCode")
                         .IsUnique();
 
-                    b.ToTable("Payments", (string)null);
+                    b.ToTable("Payments");
                 });
 
             modelBuilder.Entity("OrderApi.Models.ProductStockCache", b =>
@@ -404,6 +459,7 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("SellingPrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("StockStatus")
@@ -414,7 +470,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("ProductId")
                         .IsUnique();
 
-                    b.ToTable("ProductStockCaches", (string)null);
+                    b.ToTable("ProductStockCaches");
                 });
 
             modelBuilder.Entity("OrderApi.Models.Return", b =>
@@ -444,6 +500,7 @@ namespace OrderApi.Migrations
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<decimal>("RefundAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("ReturnCode")
@@ -466,7 +523,7 @@ namespace OrderApi.Migrations
                     b.HasIndex("ReturnCode")
                         .IsUnique();
 
-                    b.ToTable("Returns", (string)null);
+                    b.ToTable("Returns");
                 });
 
             modelBuilder.Entity("OrderApi.Models.ReturnDetail", b =>
@@ -497,16 +554,18 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("SubTotal")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("ReturnDetailId");
 
                     b.HasIndex("ReturnId");
 
-                    b.ToTable("ReturnDetails", (string)null);
+                    b.ToTable("ReturnDetails");
                 });
 
             modelBuilder.Entity("OrderApi.Models.SalesInvoice", b =>
@@ -524,9 +583,11 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("FinalAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("InvoiceCode")
@@ -544,6 +605,7 @@ namespace OrderApi.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("InvoiceId");
@@ -555,7 +617,7 @@ namespace OrderApi.Migrations
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("SalesInvoices", (string)null);
+                    b.ToTable("SalesInvoices");
                 });
 
             modelBuilder.Entity("OrderApi.Models.Supplier", b =>
@@ -584,6 +646,11 @@ namespace OrderApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -602,6 +669,11 @@ namespace OrderApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("TaxCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -610,12 +682,66 @@ namespace OrderApi.Migrations
                     b.HasIndex("SupplierCode")
                         .IsUnique();
 
-                    b.ToTable("Suppliers", (string)null);
+                    b.ToTable("Suppliers");
+                });
+
+            modelBuilder.Entity("OrderApi.Models.WalletTopUpRequest", b =>
+                {
+                    b.Property<int>("WalletTopUpRequestId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("WalletTopUpRequestId"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("RequestCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReviewedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("WalletTopUpRequestId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("RequestCode")
+                        .IsUnique();
+
+                    b.ToTable("WalletTopUpRequests");
                 });
 
             modelBuilder.Entity("OrderApi.Models.Debt", b =>
                 {
-                    b.HasOne("OrderApi.Models.Customer", "Customer")
+                    b.HasOne("OrderApi.Models.Customers", "Customer")
                         .WithMany("Debts")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -634,7 +760,7 @@ namespace OrderApi.Migrations
 
             modelBuilder.Entity("OrderApi.Models.Order", b =>
                 {
-                    b.HasOne("OrderApi.Models.Customer", "Customer")
+                    b.HasOne("OrderApi.Models.Customers", "Customer")
                         .WithMany("Orders")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -667,7 +793,7 @@ namespace OrderApi.Migrations
 
             modelBuilder.Entity("OrderApi.Models.Return", b =>
                 {
-                    b.HasOne("OrderApi.Models.Customer", "Customer")
+                    b.HasOne("OrderApi.Models.Customers", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -697,10 +823,10 @@ namespace OrderApi.Migrations
 
             modelBuilder.Entity("OrderApi.Models.SalesInvoice", b =>
                 {
-                    b.HasOne("OrderApi.Models.Customer", "Customer")
+                    b.HasOne("OrderApi.Models.Customers", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("OrderApi.Models.Order", "Order")
@@ -714,7 +840,18 @@ namespace OrderApi.Migrations
                     b.Navigation("Order");
                 });
 
-            modelBuilder.Entity("OrderApi.Models.Customer", b =>
+            modelBuilder.Entity("OrderApi.Models.WalletTopUpRequest", b =>
+                {
+                    b.HasOne("OrderApi.Models.Customers", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("OrderApi.Models.Customers", b =>
                 {
                     b.Navigation("Debts");
 

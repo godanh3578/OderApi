@@ -8,8 +8,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const distDir = path.join(__dirname, 'dist')
-const apiTarget = proce.envss.API_TARGET || 'http://localhost:5002'
-const port = Number(process.env.PORT || 5173)
+const publicHost = process.env.PUBLIC_HOST || '160.250.132.117'
+const apiTarget = process.env.API_TARGET || 'http://127.0.0.1:5000'
+const port = Number(process.env.PORT || 3000)
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -33,7 +34,7 @@ function sendFile(res, filePath) {
 }
 
 async function serveStatic(req, res) {
-  const rawUrl = new URL(req.url || '/', `http://localhost:${port}`)
+    const rawUrl = new URL(req.url || '/', `http://${publicHost}:${port}`)
   const cleanPath = decodeURIComponent(rawUrl.pathname).replace(/^\/+/, '')
   const requestedPath = path.normalize(path.join(distDir, cleanPath || 'index.html'))
 
@@ -99,7 +100,8 @@ const server = createServer(async (req, res) => {
   await serveStatic(req, res)
 })
 
-server.listen(port, () => {
-  console.log(`Frontend running at http://localhost:${port}`)
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Frontend running at http://${publicHost}:${port}`)
   console.log(`Proxying /api to ${apiTarget}`)
 })
+

@@ -39,10 +39,11 @@ namespace OrderApi.Services
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
-            var publisher = scope.ServiceProvider.GetRequiredService<RabbitMqPublisher>();
+            var publisher = scope.ServiceProvider.GetRequiredService<MassTransitEventPublisher>();
 
+            const int maxRetryCount = 3;
             var pending = await db.OutboxMessages
-                .Where(m => m.Status == OutboxMessageStatus.Pending && m.RetryCount < 5)
+                .Where(m => m.Status == OutboxMessageStatus.Pending && m.RetryCount < maxRetryCount)
                 .OrderBy(m => m.CreatedAt)
                 .Take(20)
                 .ToListAsync(cancellationToken);
@@ -51,8 +52,7 @@ namespace OrderApi.Services
             {
                 try
                 {
-                    var payload = JsonSerializer.Deserialize<JsonElement>(message.Payload);
-                    publisher.Publish(message.EventName, payload);
+                    await publisher.PublishAsync(message.EventName, message.Payload, cancellationToken);
 
                     message.Status = OutboxMessageStatus.Processed;
                     message.ProcessedAt = DateTime.UtcNow;
@@ -60,7 +60,7 @@ namespace OrderApi.Services
                 catch (Exception ex)
                 {
                     message.RetryCount++;
-                    if (message.RetryCount >= 5)
+                    if (message.RetryCount >= maxRetryCount)
                         message.Status = OutboxMessageStatus.Failed;
 
                     _logger.LogWarning(ex, "Failed to publish outbox message {Id}", message.OutboxMessageId);

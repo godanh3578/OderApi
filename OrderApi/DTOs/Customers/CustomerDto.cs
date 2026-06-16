@@ -16,6 +16,7 @@ namespace OrderApi.DTOs.Customers
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
         public string Status { get; set; } = "Active";
+        public string MembershipTier { get; set; } = "";
     }
 
     public class UpdateCustomerProfileDto
@@ -41,6 +42,8 @@ namespace OrderApi.DTOs.Customers
         public DateOnly? DateOfBirth { get; set; }
         public string? AvatarUrl { get; set; }
         public decimal TotalSpent { get; set; }
+        public string MembershipTier { get; set; } = "";
+        public decimal WalletBalance { get; set; }
         public decimal CurrentDebt { get; set; }
         public string Status { get; set; } = "";
         public DateTime CreatedAt { get; set; }

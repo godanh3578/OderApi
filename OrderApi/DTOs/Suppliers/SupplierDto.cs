@@ -8,6 +8,8 @@ namespace OrderApi.DTOs.Suppliers
         public string Phone { get; set; } = "";
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
+        public string TaxCode { get; set; } = "";
+        public string Note { get; set; } = "";
     }
 
     public class UpdateSupplierDto
@@ -17,6 +19,8 @@ namespace OrderApi.DTOs.Suppliers
         public string Phone { get; set; } = "";
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
+        public string TaxCode { get; set; } = "";
+        public string Note { get; set; } = "";
         public string Status { get; set; } = "Active";
     }
 
@@ -29,6 +33,8 @@ namespace OrderApi.DTOs.Suppliers
         public string Phone { get; set; } = "";
         public string Email { get; set; } = "";
         public string Address { get; set; } = "";
+        public string TaxCode { get; set; } = "";
+        public string Note { get; set; } = "";
         public string Status { get; set; } = "";
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }

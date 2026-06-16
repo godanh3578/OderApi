@@ -9,5 +9,6 @@ namespace OrderApi.Services
         Task<List<DebtDto>> GetAllDebtsAsync();
         Task<DebtDto> PayDebtAsync(int debtId, CreateDebtPaymentDto dto);
         Task<DebtDto> UpdateDebtStatusAsync(int debtId, UpdateDebtStatusDto dto);
+        Task<List<DebtReportDto>> GetDebtReportAsync();
     }
 }

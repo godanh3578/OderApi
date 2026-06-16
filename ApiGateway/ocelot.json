@@ -1,12 +1,53 @@
 {
+  "Jwt": {
+    "Key": "CHANGE_THIS_SECRET_ON_MACHINE_3_MINIMUM_32_CHARS",
+    "Issuer": "KhoPro.UserReportService",
+    "Audience": "KhoPro.Frontend"
+  },
   "Routes": [
+    {
+      "UpstreamPathTemplate": "/gateway/user/api/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "127.0.0.1", "Port": 8083 }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/product/api/suppliers/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/suppliers/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "127.0.0.1", "Port": 5001 }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/product/api/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "127.0.0.1", "Port": 5001 }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/order/api/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ]
+    },
     {
       "UpstreamPathTemplate": "/api/Sales/{everything}",
       "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
       "DownstreamPathTemplate": "/api/Sales/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
+        { "Host": "127.0.0.1", "Port": 5022 }
       ]
     },
     {
@@ -15,7 +56,7 @@
       "DownstreamPathTemplate": "/api/Orders/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
+        { "Host": "127.0.0.1", "Port": 5022 }
       ]
     },
     {
@@ -24,7 +65,7 @@
       "DownstreamPathTemplate": "/api/Customers/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
+        { "Host": "127.0.0.1", "Port": 5022 }
       ]
     },
     {
@@ -33,8 +74,12 @@
       "DownstreamPathTemplate": "/api/Suppliers/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
-      ]
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      }
     },
     {
       "UpstreamPathTemplate": "/api/Payments/{everything}",
@@ -42,8 +87,12 @@
       "DownstreamPathTemplate": "/api/Payments/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
-      ]
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      }
     },
     {
       "UpstreamPathTemplate": "/api/Debts/{everything}",
@@ -51,8 +100,12 @@
       "DownstreamPathTemplate": "/api/Debts/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
-      ]
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      }
     },
     {
       "UpstreamPathTemplate": "/api/ProductStockCaches/{everything}",
@@ -60,8 +113,12 @@
       "DownstreamPathTemplate": "/api/ProductStockCaches/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
-      ]
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      }
     },
     {
       "UpstreamPathTemplate": "/api/OutboxMessages/{everything}",
@@ -69,16 +126,29 @@
       "DownstreamPathTemplate": "/api/OutboxMessages/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
-      ]
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      }
     },
     {
       "UpstreamPathTemplate": "/api/products/{everything}",
-      "UpstreamHttpMethod": [ "GET" ],
+      "UpstreamHttpMethod": [ "GET", "POST" ],
       "DownstreamPathTemplate": "/api/products/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "product-service", "Port": 8080 }
+        { "Host": "127.0.0.1", "Port": 5001 }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/api/inventory/{everything}",
+      "UpstreamHttpMethod": [ "POST" ],
+      "DownstreamPathTemplate": "/api/inventory/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "127.0.0.1", "Port": 5001 }
       ]
     },
     {
@@ -87,7 +157,7 @@
       "DownstreamPathTemplate": "/api/categories/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "product-service", "Port": 8080 }
+        { "Host": "127.0.0.1", "Port": 5001 }
       ]
     },
     {
@@ -96,7 +166,7 @@
       "DownstreamPathTemplate": "/api/auth/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "user-service", "Port": 8082 }
+        { "Host": "127.0.0.1", "Port": 8083 }
       ]
     },
     {
@@ -105,7 +175,7 @@
       "DownstreamPathTemplate": "/api/reports/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "user-service", "Port": 8082 }
+        { "Host": "127.0.0.1", "Port": 8083 }
       ]
     },
     {
@@ -114,11 +184,11 @@
       "DownstreamPathTemplate": "/api/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
-        { "Host": "orderapi", "Port": 5002 }
+        { "Host": "127.0.0.1", "Port": 5022 }
       ]
     }
   ],
   "GlobalConfiguration": {
-    "BaseUrl": "http://localhost:5000"
+    "BaseUrl": "http://160.250.132.117:5000"
   }
 }

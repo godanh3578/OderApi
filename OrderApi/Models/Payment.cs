@@ -6,7 +6,8 @@ namespace OrderApi.Models
     {
         Cash,
         BankTransfer,
-        EWallet,
+        Wallet,
+        EWallet = Wallet,
         QR
     }
 

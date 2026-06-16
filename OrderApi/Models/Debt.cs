@@ -28,7 +28,7 @@ namespace OrderApi.Models
         [Range(0, double.MaxValue)]
         public decimal PaidAmount { get; set; } = 0;
 
-        public decimal RemainingAmount => DebtAmount - PaidAmount;
+        public decimal RemainingAmount { get; set; }
 
         public DateTime? DueDate { get; set; }
 

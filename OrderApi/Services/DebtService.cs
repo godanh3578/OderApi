@@ -63,7 +63,7 @@ namespace OrderApi.Services
             if (dto.Amount <= 0)
                 throw new InvalidOperationException("Số tiền trả nợ phải lớn hơn 0.");
 
-            var remainingBefore = debt.RemainingAmount;
+            var remainingBefore = GetRemainingAmount(debt);
             if (dto.Amount > remainingBefore)
                 throw new InvalidOperationException("Số tiền trả không được lớn hơn số tiền còn nợ.");
 
@@ -90,7 +90,7 @@ namespace OrderApi.Services
                 order.PaidAmount = Math.Min(order.FinalAmount, order.PaidAmount + dto.Amount);
                 order.DebtAmount = Math.Max(0, order.FinalAmount - order.PaidAmount);
                 order.PaymentStatus = order.DebtAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Partial;
-                order.OrderStatus = order.DebtAmount <= 0 ? OrderStatus.Paid : OrderStatus.Debt;
+                order.OrderStatus = order.DebtAmount <= 0 ? OrderStatus.Completed : OrderStatus.Confirmed;
                 order.UpdatedAt = DateTime.UtcNow;
             }
 
@@ -107,7 +107,7 @@ namespace OrderApi.Services
                 PaymentCode = $"PAY{DateTime.UtcNow:yyyyMMddHHmmssfff}",
                 Amount = dto.Amount,
                 PaymentDate = DateTime.UtcNow,
-                PaymentStatus = debt.RemainingAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Partial,
+                PaymentStatus = GetRemainingAmount(debt) <= 0 ? PaymentStatus.Paid : PaymentStatus.Partial,
                 Note = string.IsNullOrWhiteSpace(dto.Note) ? "Debt payment" : dto.Note
             };
 
@@ -140,6 +140,24 @@ namespace OrderApi.Services
             return MapToDto(debt);
         }
 
+        public async Task<List<DebtReportDto>> GetDebtReportAsync()
+        {
+            var debts = await _dbContext.Debts
+                .Include(d => d.Customer)
+                .GroupBy(d => d.CustomerId)
+                .Select(g => new DebtReportDto
+                {
+                    CustomerId = g.Key,
+                    CustomerName = g.FirstOrDefault()!.Customer!.FullName,
+                    TotalDebt = g.Sum(d => d.DebtAmount),
+                    TotalPaid = g.Sum(d => d.PaidAmount),
+                    TotalUnpaidOrders = g.Count(d => d.DebtAmount - d.PaidAmount > 0)
+                })
+                .ToListAsync();
+
+            return debts;
+        }
+
         private DebtDto MapToDto(Debt debt)
         {
             return new DebtDto
@@ -150,12 +168,17 @@ namespace OrderApi.Services
                 OrderId = debt.OrderId,
                 DebtAmount = debt.DebtAmount,
                 PaidAmount = debt.PaidAmount,
-                RemainingAmount = debt.RemainingAmount,
+                RemainingAmount = GetRemainingAmount(debt),
                 DueDate = debt.DueDate,
                 DebtStatus = debt.DebtStatus.ToString(),
                 CreatedAt = debt.CreatedAt,
                 UpdatedAt = debt.UpdatedAt
             };
+        }
+
+        private static decimal GetRemainingAmount(Debt debt)
+        {
+            return Math.Max(0, debt.DebtAmount - debt.PaidAmount);
         }
     }
 }

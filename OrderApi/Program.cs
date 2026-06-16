@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using MassTransit;
 using OrderApi.Data;
 using OrderApi.Models;
 using OrderApi.Services;
+using Polly;
+using Polly.Extensions.Http;
+using System.Security.Claims;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -52,14 +57,31 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
             RoleClaimType = "role"
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                if (context.Principal?.Identity is ClaimsIdentity identity
+                    && context.Principal.IsInRole("admin-user")
+                    && !context.Principal.IsInRole("Admin"))
+                {
+                    identity.AddClaim(new Claim(identity.RoleClaimType, "Admin"));
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IWalletTopUpService, WalletTopUpService>();
 builder.Services.AddScoped<IDebtService, DebtService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
+builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>((serviceProvider, client) =>
 {
     var config = serviceProvider.GetRequiredService<IConfiguration>();
@@ -68,12 +90,50 @@ builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>((ser
         client.BaseAddress = new Uri(gatewayBaseUrl);
 
     client.Timeout = TimeSpan.FromSeconds(config.GetValue("ProductIntegration:TimeoutSeconds", 3));
+})
+.AddPolicyHandler((serviceProvider, _) =>
+{
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var retryCount = config.GetValue("ProductIntegration:RetryCount", 3);
+    var baseDelayMs = config.GetValue("ProductIntegration:RetryBaseDelayMs", 200);
+
+    return HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .OrResult(response => response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        .WaitAndRetryAsync(
+            retryCount,
+            attempt => TimeSpan.FromMilliseconds(baseDelayMs * Math.Pow(2, attempt - 1)));
 });
 
-builder.Services.AddSingleton<RabbitMqPublisher>();
-builder.Services.AddHostedService<StockConsumerService>();
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<StockUpdatedConsumer>();
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        var rabbitConfig = context.GetRequiredService<IConfiguration>();
+        var host = rabbitConfig["RabbitMQ:Host"] ?? "localhost";
+        var username = rabbitConfig["RabbitMQ:Username"] ?? "guest";
+        var password = rabbitConfig["RabbitMQ:Password"] ?? "guest";
+
+        cfg.Host(host, "/", h =>
+        {
+            h.Username(username);
+            h.Password(password);
+        });
+
+        cfg.ReceiveEndpoint("stock.updated", endpoint =>
+        {
+            endpoint.ConfigureConsumer<StockUpdatedConsumer>(context);
+        });
+    });
+});
+
+builder.Services.AddScoped<MassTransitEventPublisher>();
 builder.Services.AddHostedService<OutboxDispatcherService>();
 builder.Services.AddAuthorization();
+builder.Services.AddHealthChecks()
+    .AddCheck<OrderDbHealthCheck>("order-db", failureStatus: HealthStatus.Unhealthy)
+    .AddCheck<RabbitMqHealthCheck>("rabbitmq", failureStatus: HealthStatus.Degraded);
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -102,7 +162,15 @@ try
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
-    db.Database.Migrate();
+    try
+    {
+        db.Database.Migrate();
+    }
+    catch (Exception migrationEx)
+    {
+        Console.WriteLine($"⚠️ EF migration warning: {migrationEx.Message}");
+    }
+
     await db.Database.ExecuteSqlRawAsync("""
         IF OBJECT_ID(N'[ProductStockCaches]', N'U') IS NOT NULL
            AND COL_LENGTH(N'ProductStockCaches', N'CategoryName') IS NULL
@@ -110,6 +178,79 @@ try
             ALTER TABLE [ProductStockCaches]
             ADD [CategoryName] nvarchar(100) NOT NULL
                 CONSTRAINT [DF_ProductStockCaches_CategoryName] DEFAULT N''
+        END
+        """);
+    await db.Database.ExecuteSqlRawAsync("""
+        IF OBJECT_ID(N'[Customers]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'Customers', N'AvatarUrl') IS NULL
+        BEGIN
+            ALTER TABLE [Customers]
+            ADD [AvatarUrl] nvarchar(500) NULL
+        END
+
+        IF OBJECT_ID(N'[Customers]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'Customers', N'MembershipTier') IS NULL
+        BEGIN
+            ALTER TABLE [Customers]
+            ADD [MembershipTier] nvarchar(30) NOT NULL
+                CONSTRAINT [DF_Customers_MembershipTier] DEFAULT N'Thường'
+        END
+
+        IF OBJECT_ID(N'[Customers]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'Customers', N'WalletBalance') IS NULL
+        BEGIN
+            ALTER TABLE [Customers]
+            ADD [WalletBalance] decimal(18,2) NOT NULL
+                CONSTRAINT [DF_Customers_WalletBalance] DEFAULT 0
+        END
+
+        IF OBJECT_ID(N'[WalletTopUpRequests]', N'U') IS NULL
+        BEGIN
+            CREATE TABLE [WalletTopUpRequests] (
+                [WalletTopUpRequestId] int NOT NULL IDENTITY,
+                [RequestCode] nvarchar(50) NOT NULL,
+                [CustomerId] int NOT NULL,
+                [Amount] decimal(18,2) NOT NULL,
+                [PaymentMethod] nvarchar(50) NOT NULL CONSTRAINT [DF_WalletTopUpRequests_PaymentMethod] DEFAULT N'BankTransfer',
+                [Status] int NOT NULL,
+                [Note] nvarchar(500) NOT NULL,
+                [RequestedAt] datetime2 NOT NULL,
+                [ReviewedAt] datetime2 NULL,
+                [ReviewedBy] nvarchar(100) NOT NULL,
+                CONSTRAINT [PK_WalletTopUpRequests] PRIMARY KEY ([WalletTopUpRequestId]),
+                CONSTRAINT [FK_WalletTopUpRequests_Customers_CustomerId]
+                    FOREIGN KEY ([CustomerId]) REFERENCES [Customers] ([CustomerId]) ON DELETE NO ACTION
+            );
+
+            CREATE INDEX [IX_WalletTopUpRequests_CustomerId]
+                ON [WalletTopUpRequests] ([CustomerId]);
+
+            CREATE UNIQUE INDEX [IX_WalletTopUpRequests_RequestCode]
+                ON [WalletTopUpRequests] ([RequestCode]);
+        END
+
+        IF OBJECT_ID(N'[WalletTopUpRequests]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'WalletTopUpRequests', N'PaymentMethod') IS NULL
+        BEGIN
+            ALTER TABLE [WalletTopUpRequests]
+            ADD [PaymentMethod] nvarchar(50) NOT NULL
+                CONSTRAINT [DF_WalletTopUpRequests_PaymentMethod] DEFAULT N'BankTransfer'
+        END
+
+        IF OBJECT_ID(N'[Suppliers]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'Suppliers', N'TaxCode') IS NULL
+        BEGIN
+            ALTER TABLE [Suppliers]
+            ADD [TaxCode] nvarchar(20) NOT NULL
+                CONSTRAINT [DF_Suppliers_TaxCode] DEFAULT N''
+        END
+
+        IF OBJECT_ID(N'[Suppliers]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'Suppliers', N'Note') IS NULL
+        BEGIN
+            ALTER TABLE [Suppliers]
+            ADD [Note] nvarchar(500) NOT NULL
+                CONSTRAINT [DF_Suppliers_Note] DEFAULT N''
         END
         """);
     await DbSeeder.SeedAsync(db);
@@ -130,6 +271,7 @@ app.UseStaticFiles();
 app.UseCors("DefaultCorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHealthChecks("/health");
 app.MapControllers();
 app.Run();
 

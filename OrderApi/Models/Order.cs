@@ -4,18 +4,20 @@ namespace OrderApi.Models
 {
     public enum OrderStatus
     {
-        Pending,      // Đơn hàng mới tạo, chưa hoàn tất thanh toán
-        Confirmed,    // Đơn hàng đã được xác nhận
-        Paid,         // Đơn hàng đã thanh toán đủ
-        Debt,         // Đơn hàng còn công nợ
-        Cancelled     // Đơn hàng đã bị hủy
+        Pending = 0,
+        Confirmed = 1,
+        Completed = 2,
+        Debt = 3,
+        Cancelled = 4,
+        Shipping = 5,
+        Paid = Completed,
     }
 
     public enum PaymentStatus
     {
-        Unpaid,   // Chưa thanh toán
-        Partial,  // Thanh toán một phần
-        Paid      // Đã thanh toán đủ
+        Unpaid,
+        Partial,
+        Paid
     }
 
     public class Order
@@ -32,10 +34,9 @@ namespace OrderApi.Models
         [Required]
         public int CustomerId { get; set; }
         public Customers? Customer { get; set; }
-        
+
         [Required]
-        [StringLength(100)]
-        public string CreatedBy { get; set; } = "";
+        public int CreatedByUserId { get; set; }
 
         public DateTime OrderDate { get; set; } = DateTime.UtcNow;
 
@@ -45,13 +46,18 @@ namespace OrderApi.Models
         [Range(0, double.MaxValue)]
         public decimal DiscountAmount { get; set; } = 0;
 
+        [StringLength(10)]
+        public string DiscountType { get; set; } = "Fixed";
+
+        [Range(0, double.MaxValue)]
+        public decimal DiscountValue { get; set; } = 0;
+
         [Range(0, double.MaxValue)]
         public decimal FinalAmount { get; set; } = 0;
 
         [Range(0, double.MaxValue)]
         public decimal PaidAmount { get; set; } = 0;
 
-        [Range(0, double.MaxValue)]
         public decimal DebtAmount { get; set; } = 0;
 
         public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;

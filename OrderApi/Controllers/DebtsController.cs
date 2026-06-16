@@ -24,6 +24,13 @@ namespace OrderApi.Controllers
             return Ok(debts);
         }
 
+        [HttpGet("report")]
+        public async Task<IActionResult> GetReport()
+        {
+            var report = await _debtService.GetDebtReportAsync();
+            return Ok(report);
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {

@@ -44,20 +44,22 @@ namespace OrderApi.Services
 
             var evt = new OrderCreatedEvent
             {
-                EventName = "order.created",
                 OrderId = order.OrderId,
                 OrderCode = order.OrderCode,
                 CustomerId = order.CustomerId,
                 CustomerName = order.Customer?.FullName ?? "",
                 TotalAmount = order.TotalAmount,
                 DiscountAmount = order.DiscountAmount,
+                DiscountType = order.DiscountType,
+                DiscountValue = order.DiscountValue,
                 FinalAmount = order.FinalAmount,
                 PaidAmount = order.PaidAmount,
                 DebtAmount = order.DebtAmount,
                 PaymentMethod = payment?.PaymentMethod.ToString() ?? "",
                 PaymentStatus = order.PaymentStatus.ToString(),
                 OrderStatus = order.OrderStatus.ToString(),
-                CreatedBy = order.CreatedBy,
+                CreatedByUserId = order.CreatedByUserId,
+                CreatedBy = order.CreatedByUserId.ToString(),
                 CreatedAt = order.CreatedAt,
                 Items = order.Items.Select(i => new OrderCreatedEventItem
                 {
@@ -70,7 +72,14 @@ namespace OrderApi.Services
                 }).ToList()
             };
 
-            await EnqueueAsync("order.created", evt, cancellationToken);
+            var envelope = new IntegrationEventEnvelope<OrderCreatedEvent>
+            {
+                EventType = "order.created",
+                Timestamp = DateTime.UtcNow,
+                Data = evt
+            };
+
+            await EnqueueAsync("order.created", envelope, cancellationToken);
         }
     }
 }

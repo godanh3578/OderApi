@@ -43,6 +43,17 @@ namespace OrderApi.Services
             return payments.Select(MapToDto).ToList();
         }
 
+        public async Task<List<PaymentDto>> GetPaymentsByCustomerIdAsync(int customerId)
+        {
+            var payments = await _dbContext.Payments
+                .Include(p => p.Order)
+                .Where(p => p.Order != null && p.Order.CustomerId == customerId)
+                .OrderByDescending(p => p.PaymentDate)
+                .ToListAsync();
+
+            return payments.Select(MapToDto).ToList();
+        }
+
         public async Task<PaymentDto> RecordPaymentAsync(int orderId, CreatePaymentDto dto)
         {
             var order = await _dbContext.Orders
@@ -79,13 +90,13 @@ namespace OrderApi.Services
             {
                 payment.PaymentStatus = PaymentStatus.Paid;
                 order.PaymentStatus = PaymentStatus.Paid;
-                order.OrderStatus = OrderStatus.Paid;
+                order.OrderStatus = OrderStatus.Completed;
             }
             else
             {
                 payment.PaymentStatus = PaymentStatus.Partial;
                 order.PaymentStatus = PaymentStatus.Partial;
-                order.OrderStatus = OrderStatus.Debt;
+                order.OrderStatus = OrderStatus.Confirmed;
             }
 
             var debt = await _dbContext.Debts

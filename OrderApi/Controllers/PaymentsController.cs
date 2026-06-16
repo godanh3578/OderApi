@@ -39,6 +39,13 @@ namespace OrderApi.Controllers
             return Ok(payments);
         }
 
+        [HttpGet("customer/{customerId}")]
+        public async Task<IActionResult> GetByCustomerId(int customerId)
+        {
+            var payments = await _paymentService.GetPaymentsByCustomerIdAsync(customerId);
+            return Ok(payments);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreatePaymentDto dto)
         {

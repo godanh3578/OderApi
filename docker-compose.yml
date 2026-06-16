@@ -35,11 +35,55 @@ services:
     container_name: microservices-api-gateway
     ports:
       - "5000:5000"
+      - "7000:5000"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      Jwt__Key: "CHANGE_THIS_SECRET_ON_MACHINE_3_MINIMUM_32_CHARS"
+      Jwt__Issuer: "KhoPro.UserReportService"
+      Jwt__Audience: "KhoPro.Frontend"
+      Routes__0__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__1__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__2__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__3__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__4__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__5__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__6__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__7__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__8__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__9__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__10__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__11__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__12__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__13__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__14__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__15__DownstreamHostAndPorts__0__Host: orderapi
+      Routes__16__DownstreamHostAndPorts__0__Host: host.docker.internal
+      Routes__17__DownstreamHostAndPorts__0__Host: orderapi
     depends_on:
       orderapi:
-        condition: service_started
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: orderapi-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      PUBLIC_HOST: "160.250.132.117"
+      API_TARGET: "http://api-gateway:5000"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
 
   orderapi:
     build:
@@ -47,19 +91,31 @@ services:
       dockerfile: Dockerfile
     container_name: orderapi-service
     ports:
-      - "5002:5002"
+      - "5022:5022"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=OrderDB;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True"
       RabbitMQ__Host: rabbitmq
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      RabbitMQ__OrderExchange: order.exchange
       ProductIntegration__GatewayBaseUrl: "http://api-gateway:5000"
-      ProductIntegration__UseGatewayLookup: "false"
+      ProductIntegration__UseGatewayLookup: "true"
       ProductIntegration__AllowCacheFallback: "true"
+      Jwt__Key: "CHANGE_THIS_SECRET_ON_MACHINE_3_MINIMUM_32_CHARS"
+      Jwt__Issuer: "KhoPro.UserReportService"
+      Jwt__Audience: "KhoPro.Frontend"
     depends_on:
       sqlserver:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5022/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
 volumes:
   orderdb-data:

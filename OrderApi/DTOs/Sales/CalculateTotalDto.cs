@@ -4,6 +4,8 @@ namespace OrderApi.DTOs.Sales
     {
         public List<SalesItemDto> Items { get; set; } = new();
         public decimal DiscountAmount { get; set; }
+        public string DiscountType { get; set; } = "Fixed";
+        public decimal DiscountValue { get; set; }
     }
 
     public class SalesItemDto
@@ -17,6 +19,8 @@ namespace OrderApi.DTOs.Sales
     {
         public decimal TotalAmount { get; set; }
         public decimal DiscountAmount { get; set; }
+        public string DiscountType { get; set; } = "";
+        public decimal DiscountValue { get; set; }
         public decimal FinalAmount { get; set; }
     }
 }

@@ -1,39 +1,33 @@
 {
   "format": 1,
   "restore": {
-    "D:\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj": {}
+    "D:\\baitap\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj": {}
   },
   "projects": {
-    "D:\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj": {
+    "D:\\baitap\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj",
+        "projectUniqueName": "D:\\baitap\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj",
         "projectName": "OrderApi.Tests",
-        "projectPath": "D:\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj",
-        "packagesPath": "C:\\Users\\tungv\\.nuget\\packages\\",
-        "outputPath": "D:\\OderApi\\OrderApi.Tests\\obj\\",
+        "projectPath": "D:\\baitap\\OderApi\\OrderApi.Tests\\OrderApi.Tests.csproj",
+        "packagesPath": "C:\\Users\\quoca\\.nuget\\packages\\",
+        "outputPath": "D:\\baitap\\OderApi\\OrderApi.Tests\\obj\\",
         "projectStyle": "PackageReference",
-        "fallbackFolders": [
-          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
-        ],
         "configFilePaths": [
-          "C:\\Users\\tungv\\AppData\\Roaming\\NuGet\\NuGet.Config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "C:\\Users\\quoca\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "D:\\OderApi\\OrderApi\\OrderApi.csproj": {
-                "projectPath": "D:\\OderApi\\OrderApi\\OrderApi.csproj"
+              "D:\\baitap\\OderApi\\OrderApi\\OrderApi.csproj": {
+                "projectPath": "D:\\baitap\\OderApi\\OrderApi\\OrderApi.csproj"
               }
             }
           }
@@ -47,8 +41,7 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        },
-        "SdkAnalysisLevel": "9.0.300"
+        }
       },
       "frameworks": {
         "net8.0": {
@@ -87,32 +80,26 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.313/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.422/PortableRuntimeIdentifierGraph.json"
         }
       }
     },
-    "D:\\OderApi\\OrderApi\\OrderApi.csproj": {
+    "D:\\baitap\\OderApi\\OrderApi\\OrderApi.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\OderApi\\OrderApi\\OrderApi.csproj",
+        "projectUniqueName": "D:\\baitap\\OderApi\\OrderApi\\OrderApi.csproj",
         "projectName": "OrderApi",
-        "projectPath": "D:\\OderApi\\OrderApi\\OrderApi.csproj",
-        "packagesPath": "C:\\Users\\tungv\\.nuget\\packages\\",
-        "outputPath": "D:\\OderApi\\OrderApi\\obj\\",
+        "projectPath": "D:\\baitap\\OderApi\\OrderApi\\OrderApi.csproj",
+        "packagesPath": "C:\\Users\\quoca\\.nuget\\packages\\",
+        "outputPath": "D:\\baitap\\OderApi\\OrderApi\\obj\\",
         "projectStyle": "PackageReference",
-        "fallbackFolders": [
-          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
-        ],
         "configFilePaths": [
-          "C:\\Users\\tungv\\AppData\\Roaming\\NuGet\\NuGet.Config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "C:\\Users\\quoca\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -130,13 +117,16 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        },
-        "SdkAnalysisLevel": "9.0.300"
+        }
       },
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
           "dependencies": {
+            "MassTransit.RabbitMQ": {
+              "target": "Package",
+              "version": "[9.1.2, )"
+            },
             "Microsoft.AspNetCore.Authentication.JwtBearer": {
               "target": "Package",
               "version": "[8.0.11, )"
@@ -158,6 +148,10 @@
             "Microsoft.EntityFrameworkCore.Tools": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
+              "target": "Package",
+              "version": "[8.0.11, )"
+            },
+            "Microsoft.Extensions.Http.Polly": {
               "target": "Package",
               "version": "[8.0.11, )"
             },
@@ -189,7 +183,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.313/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.422/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

@@ -7,6 +7,9 @@ namespace OrderApi.DTOs.Orders
         public string? CustomerName { get; set; }
         public List<CreateOrderDetailDto> Items { get; set; } = new();
         public decimal DiscountAmount { get; set; }
+        public string DiscountType { get; set; } = "Fixed";
+        public decimal DiscountValue { get; set; }
+        public int CreatedByUserId { get; set; }
         public string CreatedBy { get; set; } = "";
     }
 

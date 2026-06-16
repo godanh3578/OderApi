@@ -5,7 +5,8 @@ export const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    ClientId: 'frontend'
   }
 })
 
@@ -28,7 +29,6 @@ api.interceptors.request.use((config) => {
   if (staffToken) {
     config.headers.Authorization = `Bearer ${staffToken}`
   }
-  console.log('API request:', config.method, config.url, JSON.stringify(config.data))  // ← thêm dòng này
   return config
 })
 export default api

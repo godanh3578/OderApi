@@ -16,6 +16,7 @@ namespace OrderApi.Data
         public DbSet<Supplier> Suppliers { get; set; }
         public DbSet<Debt> Debts { get; set; }
         public DbSet<Payment> Payments { get; set; }
+        public DbSet<WalletTopUpRequest> WalletTopUpRequests { get; set; }
         public DbSet<ProductStockCache> ProductStockCaches { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
@@ -49,6 +50,18 @@ namespace OrderApi.Data
                 .HasKey(o => o.OrderId);
 
             modelBuilder.Entity<Order>()
+                .Property(o => o.TotalAmount)
+                .HasColumnName("SubTotal");
+
+            modelBuilder.Entity<Order>()
+                .Property(o => o.FinalAmount)
+                .HasColumnName("TotalAmount");
+
+            modelBuilder.Entity<Order>()
+                .Property(o => o.DebtAmount)
+                .HasComputedColumnSql("[TotalAmount] - [PaidAmount]", stored: true);
+
+            modelBuilder.Entity<Order>()
                 .HasIndex(o => o.OrderCode)
                 .IsUnique();
 
@@ -66,13 +79,25 @@ namespace OrderApi.Data
                 .HasKey(od => od.OrderDetailId);
 
             modelBuilder.Entity<OrderDetail>()
+                .Property(od => od.OrderDetailId)
+                .HasColumnName("OrderItemId");
+
+            modelBuilder.Entity<OrderDetail>()
+                .Property(od => od.SubTotal)
+                .HasColumnName("LineTotal")
+                .HasComputedColumnSql("[UnitPrice] * [Quantity] - [DiscountAmount]", stored: true);
+
+            modelBuilder.Entity<OrderDetail>()
                 .HasOne(od => od.Order)
                 .WithMany(o => o.Items)
                 .HasForeignKey(od => od.OrderId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<OrderDetail>()
-                .ToTable("OrderDetails");
+                .ToTable("OrderItems");
+
+            modelBuilder.Entity<OrderDetail>()
+                .HasQueryFilter(od => od.Order != null && !od.Order.IsDeleted);
 
             // Payments
             modelBuilder.Entity<Payment>()
@@ -88,9 +113,36 @@ namespace OrderApi.Data
                 .HasForeignKey(p => p.OrderId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            modelBuilder.Entity<Payment>()
+                .HasQueryFilter(p => p.Order != null && !p.Order.IsDeleted);
+
+            // Wallet top-up requests
+            modelBuilder.Entity<WalletTopUpRequest>()
+                .HasKey(r => r.WalletTopUpRequestId);
+
+            modelBuilder.Entity<WalletTopUpRequest>()
+                .HasIndex(r => r.RequestCode)
+                .IsUnique();
+
+            modelBuilder.Entity<WalletTopUpRequest>()
+                .HasOne(r => r.Customer)
+                .WithMany()
+                .HasForeignKey(r => r.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<WalletTopUpRequest>()
+                .HasQueryFilter(r => r.Customer != null && !r.Customer.IsDeleted);
+
             // Debts
             modelBuilder.Entity<Debt>()
                 .HasKey(d => d.DebtId);
+
+            modelBuilder.Entity<Debt>()
+                .ToTable("CustomerDebts");
+
+            modelBuilder.Entity<Debt>()
+                .Property(d => d.RemainingAmount)
+                .HasComputedColumnSql("[DebtAmount] - [PaidAmount]", stored: true);
 
             modelBuilder.Entity<Debt>()
                 .HasOne(d => d.Customer)
@@ -105,7 +157,9 @@ namespace OrderApi.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Debt>()
-                .Ignore(d => d.RemainingAmount);
+                .HasQueryFilter(d =>
+                    d.Customer != null && !d.Customer.IsDeleted &&
+                    d.Order != null && !d.Order.IsDeleted);
 
             // ProductStockCache
             modelBuilder.Entity<ProductStockCache>()
@@ -143,6 +197,11 @@ namespace OrderApi.Data
                 .HasForeignKey(r => r.CustomerId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<Return>()
+                .HasQueryFilter(r =>
+                    r.Customer != null && !r.Customer.IsDeleted &&
+                    r.Order != null && !r.Order.IsDeleted);
+
             // ReturnDetails
             modelBuilder.Entity<ReturnDetail>()
                 .HasKey(rd => rd.ReturnDetailId);
@@ -151,6 +210,8 @@ namespace OrderApi.Data
                 .WithMany(r => r.Items)
                 .HasForeignKey(rd => rd.ReturnId)
                 .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<ReturnDetail>()
+                .HasQueryFilter(rd => rd.Return != null);
 
             // SalesInvoices
             modelBuilder.Entity<SalesInvoice>()
@@ -163,6 +224,23 @@ namespace OrderApi.Data
                 .WithMany()
                 .HasForeignKey(si => si.OrderId)
                 .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<SalesInvoice>()
+                .HasOne(si => si.Customer)
+                .WithMany()
+                .HasForeignKey(si => si.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<SalesInvoice>()
+                .HasQueryFilter(si =>
+                    si.Order != null && !si.Order.IsDeleted &&
+                    si.Customer != null && !si.Customer.IsDeleted);
+
+            foreach (var property in modelBuilder.Model.GetEntityTypes()
+                .SelectMany(entityType => entityType.GetProperties())
+                .Where(property => property.ClrType == typeof(decimal) || property.ClrType == typeof(decimal?)))
+            {
+                property.SetPrecision(18);
+                property.SetScale(2);
+            }
         }
     }
 }

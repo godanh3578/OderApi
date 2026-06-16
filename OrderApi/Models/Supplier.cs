@@ -35,6 +35,12 @@ namespace OrderApi.Models
         [StringLength(500)]
         public string Address { get; set; } = "";
 
+        [StringLength(20)]
+        public string TaxCode { get; set; } = "";
+
+        [StringLength(500)]
+        public string Note { get; set; } = "";
+
         public SupplierStatus Status { get; set; } = SupplierStatus.Active;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

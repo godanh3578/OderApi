@@ -19,7 +19,7 @@ namespace OrderApi.Tests.Tests
                 .Options;
 
             var context = new OrderDbContext(options);
-            context.Customers.Add(new Customer
+            context.Customers.Add(new Customers
             {
                 CustomerId = 1,
                 CustomerCode = "KH001",
@@ -32,13 +32,13 @@ namespace OrderApi.Tests.Tests
                 OrderId = 1,
                 OrderCode = "ORD001",
                 CustomerId = 1,
-                CreatedBy = "sales01",
+                CreatedByUserId = 1,
                 TotalAmount = 500,
                 FinalAmount = 500,
                 PaidAmount = 200,
                 DebtAmount = 300,
                 PaymentStatus = PaymentStatus.Partial,
-                OrderStatus = OrderStatus.Debt
+                OrderStatus = OrderStatus.Confirmed
             });
             context.Debts.Add(new Debt
             {
@@ -77,7 +77,7 @@ namespace OrderApi.Tests.Tests
             Assert.Equal(500, order!.PaidAmount);
             Assert.Equal(0, order.DebtAmount);
             Assert.Equal(PaymentStatus.Paid, order.PaymentStatus);
-            Assert.Equal(OrderStatus.Paid, order.OrderStatus);
+            Assert.Equal(OrderStatus.Completed, order.OrderStatus);
             Assert.Equal(0, customer!.CurrentDebt);
             Assert.Equal(300, payment.Amount);
             Assert.Equal(PaymentStatus.Paid, payment.PaymentStatus);
@@ -91,6 +91,27 @@ namespace OrderApi.Tests.Tests
 
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 service.PayDebtAsync(1, new CreateDebtPaymentDto { Amount = 301 }));
+        }
+
+        [Fact]
+        public async Task GetPaymentsByCustomerId_ReturnsCustomerPaymentHistory()
+        {
+            using var context = CreateContext();
+            context.Payments.Add(new Payment
+            {
+                OrderId = 1,
+                PaymentCode = "PAY001",
+                Amount = 100,
+                PaymentDate = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            var service = new PaymentService(context, NullLogger<PaymentService>.Instance);
+
+            var payments = await service.GetPaymentsByCustomerIdAsync(1);
+
+            Assert.Single(payments);
+            Assert.Equal(100, payments[0].Amount);
         }
     }
 }

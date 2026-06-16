@@ -10,10 +10,14 @@
     "serve": "node server.js"
   },
   "dependencies": {
+    "@iconify/vue": "^5.0.1",
     "@lucide/vue": "^1.17.0",
+    "@mdi/font": "^7.4.47",
     "axios": "^1.16.1",
+    "pinia": "^3.0.4",
     "vue": "^3.5.32",
-    "vue-router": "^5.0.4"
+    "vue-router": "^5.0.4",
+    "vuetify": "^4.1.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.6",

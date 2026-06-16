@@ -9,6 +9,14 @@ namespace OrderApi.Services
     {
         private readonly OrderDbContext _dbContext;
         private readonly ILogger<CustomerService> _logger;
+        private static readonly HashSet<string> AllowedMembershipTiers = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Thường",
+            "Bạc",
+            "Vàng",
+            "Bạch Kim",
+            "Kim Cương"
+        };
 
         public CustomerService(OrderDbContext dbContext, ILogger<CustomerService> logger)
         {
@@ -42,9 +50,26 @@ namespace OrderApi.Services
 
         public async Task<CustomerDto?> GetCustomerByPhoneAsync(string phone)
         {
+            var normalizedPhone = NormalizePhone(phone);
             var customer = await _dbContext.Customers
                 .Include(c => c.Orders)
-                .FirstOrDefaultAsync(c => c.Phone == phone);
+                .FirstOrDefaultAsync(c => c.Phone == normalizedPhone);
+
+            if (customer == null)
+                return null;
+
+            return MapToDto(customer);
+        }
+
+        public async Task<CustomerDto?> GetCustomerByEmailAsync(string email)
+        {
+            var normalizedEmail = NormalizeEmail(email);
+            if (string.IsNullOrWhiteSpace(normalizedEmail))
+                return null;
+
+            var customer = await _dbContext.Customers
+                .Include(c => c.Orders)
+                .FirstOrDefaultAsync(c => c.Email.ToLower() == normalizedEmail);
 
             if (customer == null)
                 return null;
@@ -63,10 +88,33 @@ namespace OrderApi.Services
 
         public async Task<CustomerDto> CreateCustomerAsync(CreateCustomerDto dto)
         {
+            dto.FullName = dto.FullName.Trim();
+            dto.Phone = NormalizePhone(dto.Phone);
+            dto.Email = NormalizeEmail(dto.Email);
+            dto.Address = dto.Address.Trim();
+
             if (string.IsNullOrWhiteSpace(dto.CustomerCode))
             {
                 var count = await _dbContext.Customers.IgnoreQueryFilters().CountAsync();
                 dto.CustomerCode = $"KH{(count + 1):D6}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.Phone))
+            {
+                var normalizedPhoneExists = await _dbContext.Customers
+                    .IgnoreQueryFilters()
+                    .AnyAsync(c => c.Phone == dto.Phone);
+                if (normalizedPhoneExists)
+                    throw new InvalidOperationException("DUPLICATE_PHONE: So dien thoai nay da duoc dang ky.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.Email))
+            {
+                var normalizedEmailExists = await _dbContext.Customers
+                    .IgnoreQueryFilters()
+                    .AnyAsync(c => c.Email.ToLower() == dto.Email);
+                if (normalizedEmailExists)
+                    throw new InvalidOperationException("DUPLICATE_EMAIL: Email nay da duoc dang ky.");
             }
 
             if (!string.IsNullOrWhiteSpace(dto.Phone))
@@ -90,6 +138,7 @@ namespace OrderApi.Services
                 Phone = dto.Phone,
                 Email = dto.Email,
                 Address = dto.Address,
+                MembershipTier = "Thường",
                 Status = CustomerStatus.Active
             };
 
@@ -111,6 +160,10 @@ namespace OrderApi.Services
             customer.Phone = dto.Phone;
             customer.Email = dto.Email;
             customer.Address = dto.Address;
+
+            var membershipTier = NormalizeMembershipTier(dto.MembershipTier);
+            if (!string.IsNullOrWhiteSpace(membershipTier))
+                customer.MembershipTier = membershipTier;
 
             if (Enum.TryParse<CustomerStatus>(dto.Status, out var status))
                 customer.Status = status;
@@ -182,6 +235,20 @@ namespace OrderApi.Services
             if (customer == null)
                 return false;
 
+            var hasOrders = await _dbContext.Orders
+                .IgnoreQueryFilters()
+                .AnyAsync(o => o.CustomerId == customerId);
+            if (hasOrders)
+                throw new InvalidOperationException("Khong the xoa khach hang da co don hang.");
+
+            var hasDebt = customer.CurrentDebt > 0
+                || await _dbContext.Debts.AnyAsync(d =>
+                    d.CustomerId == customerId &&
+                    d.DebtStatus != DebtStatus.Paid &&
+                    d.DebtAmount > d.PaidAmount);
+            if (hasDebt)
+                throw new InvalidOperationException("Khong the xoa khach hang con cong no.");
+
             _dbContext.Customers.Remove(customer);
             await _dbContext.SaveChangesAsync();
 
@@ -236,15 +303,47 @@ private CustomerDto MapToDto(Customers customer)
             : null,
             
         TotalSpent = customer.TotalSpent,
+        MembershipTier = customer.MembershipTier,
+        WalletBalance = customer.WalletBalance,
         CurrentDebt = customer.CurrentDebt,
         Status = customer.Status.ToString() ?? "Active",
         CreatedAt = customer.CreatedAt,
         UpdatedAt = customer.UpdatedAt
     };
 }
-        public Task<CustomerDto?> GetCustomerByIdAsync(int customerId)
+
+        private static string NormalizeMembershipTier(string? tier)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(tier))
+                return "";
+
+            var normalized = tier.Trim();
+            var codeTier = normalized.ToUpperInvariant() switch
+            {
+                "DEFAULT" => "Thường",
+                "SILVER" => "Bạc",
+                "GOLD" => "Vàng",
+                "PLATINUM" => "Bạch Kim",
+                "DIAMOND" => "Kim Cương",
+                _ => normalized
+            };
+            return AllowedMembershipTiers.FirstOrDefault(t => string.Equals(t, codeTier, StringComparison.OrdinalIgnoreCase)) ?? "";
+        }
+
+        private static string NormalizeEmail(string? email)
+        {
+            return (email ?? string.Empty).Trim().ToLowerInvariant();
+        }
+
+        private static string NormalizePhone(string? phone)
+        {
+            return (phone ?? string.Empty).Trim();
+        }
+
+        public async Task<CustomerDto?> GetCustomerByIdAsync(int customerId)
+        {
+            var customer = await _dbContext.Customers.FindAsync(customerId);
+            return customer == null ? null : MapToDto(customer);
         }
     }
 }

@@ -18,11 +18,21 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] string? search, [FromQuery] int? customerId)
+        public async Task<IActionResult> GetAll(
+            [FromQuery] string? search = null,
+            [FromQuery] int? customerId = null,
+            [FromQuery] string? status = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null)
         {
             if (customerId.HasValue)
             {
-                var customerOrders = await _orderService.GetOrdersByCustomerIdAsync(customerId.Value, search);
+                var customerOrders = await _orderService.GetOrdersByCustomerIdAsync(
+                    customerId.Value,
+                    search,
+                    status,
+                    fromDate,
+                    toDate);
                 return Ok(customerOrders);
             }
 
@@ -34,7 +44,7 @@ namespace OrderApi.Controllers
             if (!user.IsInRole("Admin") && !user.IsInRole("Sales") && !user.IsInRole("Warehouse"))
                 return Forbid();
 
-            var orders = await _orderService.GetAllOrdersAsync(search);
+            var orders = await _orderService.GetAllOrdersAsync(search, status, fromDate, toDate);
             return Ok(orders);
         }
 
@@ -67,8 +77,8 @@ namespace OrderApi.Controllers
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(dto.CreatedBy))
-                    dto.CreatedBy = User.FindFirstValue(ClaimTypes.Name) ?? "sales01";
+                if (dto.CreatedByUserId <= 0)
+                    dto.CreatedByUserId = TryGetCurrentUserId(User) ?? 1;
 
                 var order = await _orderService.CreateOrderAsync(dto);
                 return Ok(order);
@@ -77,6 +87,15 @@ namespace OrderApi.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        private static int? TryGetCurrentUserId(ClaimsPrincipal user)
+        {
+            var raw = user.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? user.FindFirstValue("sub")
+                ?? user.FindFirstValue("userId");
+
+            return int.TryParse(raw, out var userId) ? userId : null;
         }
 
         [HttpPut("{id}/status")]
