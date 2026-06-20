@@ -27,12 +27,16 @@ namespace OrderApi.Services
         public async Task<CustomerDto> GetCustomerProfileAsync(int customerId)
     {
         // Tìm customer trong Database bao gồm cả trường Ngày sinh (DateTime?)
-        var customer = await _dbContext.Customers.FindAsync(customerId);
+        var customer = await _dbContext.Customers
+            .FirstOrDefaultAsync(c => c.CustomerId == customerId);
     
          if (customer == null)
         throw new KeyNotFoundException($"Không tìm thấy khách hàng với ID: {customerId}");
 
     // Trả về dữ liệu đã được map qua hàm MapToDto cực kỳ an toàn
+        if (customer.Status != CustomerStatus.Active)
+            throw new InvalidOperationException("Tai khoan khach hang da bi khoa hoac ngung hoat dong.");
+
         return MapToDto(customer);
     }
 

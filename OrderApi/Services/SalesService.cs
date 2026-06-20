@@ -3,9 +3,19 @@ using OrderApi.DTOs.Sales;
 using OrderApi.DTOs.Orders;
 using OrderApi.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Net.Http.Json;
+using System.Collections.Concurrent;
 
 namespace OrderApi.Services
 {
+    // Shared in-memory map: N2 OrderId → N3 OrderId (GUID string)
+    internal static class N3OrderTracker
+    {
+        private static readonly ConcurrentDictionary<int, string> _map = new();
+        internal static void Register(int n2OrderId, string n3OrderId) => _map[n2OrderId] = n3OrderId;
+        internal static bool TryGetAndRemove(int n2OrderId, out string n3OrderId) => _map.TryRemove(n2OrderId, out n3OrderId!);
+    }
+
     public class SalesService : ISalesService
     {
         private readonly OrderDbContext _dbContext;
@@ -13,6 +23,7 @@ namespace OrderApi.Services
         private readonly IPaymentService _paymentService;
         private readonly IOutboxService _outboxService;
         private readonly IProductCatalogClient _productCatalogClient;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<SalesService> _logger;
 
         public SalesService(
@@ -21,6 +32,7 @@ namespace OrderApi.Services
             IPaymentService paymentService,
             IOutboxService outboxService,
             IProductCatalogClient productCatalogClient,
+            IHttpClientFactory httpClientFactory,
             ILogger<SalesService> logger)
         {
             _dbContext = dbContext;
@@ -28,6 +40,7 @@ namespace OrderApi.Services
             _paymentService = paymentService;
             _outboxService = outboxService;
             _productCatalogClient = productCatalogClient;
+            _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
 
@@ -139,6 +152,7 @@ namespace OrderApi.Services
                 ?? throw new KeyNotFoundException($"Customer {dto.CustomerId} not found");
 
             var items = new List<CreateOrderDetailDto>();
+            var categoryByProductId = new Dictionary<int, string?>();
             foreach (var item in dto.Items)
             {
                 if (item.Quantity <= 0)
@@ -189,6 +203,7 @@ namespace OrderApi.Services
                 }
 
                 cachedStock.LastUpdatedAt = DateTime.UtcNow;
+                categoryByProductId[item.ProductId] = cachedStock.CategoryName;
 
                 items.Add(new CreateOrderDetailDto
                 {
@@ -210,6 +225,7 @@ namespace OrderApi.Services
                 DiscountAmount = dto.DiscountAmount,
                 DiscountType = dto.DiscountType,
                 DiscountValue = dto.DiscountValue,
+                PaymentMethod = dto.PaymentMethod,
                 CreatedByUserId = ResolveCreatedByUserId(createdBy)
             };
 
@@ -282,7 +298,7 @@ namespace OrderApi.Services
                 _dbContext.Debts.Add(debt);
 
                 orderEntity.DebtAmount = debtAmount;
-                orderEntity.OrderStatus = OrderStatus.Confirmed;
+                orderEntity.OrderStatus = OrderStatus.Pending;
                 orderEntity.PaymentStatus = orderEntity.PaidAmount > 0 ? PaymentStatus.Partial : PaymentStatus.Unpaid;
 
                 customer.CurrentDebt += debtAmount;
@@ -302,6 +318,53 @@ namespace OrderApi.Services
             await _outboxService.EnqueueOrderCreatedAsync(orderEntity.OrderId);
 
             await transaction.CommitAsync();
+
+            // Fire-and-forget: push order to N3 (UserReport). Do not fail checkout if N3 is down.
+            var n3CustomerId = dto.CustomerId.ToString();
+            var n3CustomerName = customer.FullName;
+            var n3Email = customer.Email;
+            var n3Phone = customer.Phone;
+            var n3Address = customer.Address;
+            var n3Discount = orderEntity.DiscountAmount;
+            var n3PaymentMethod = dto.PaymentMethod;
+            var n3PaidAmount = orderEntity.PaidAmount;
+            var n3Items = orderEntity.Items.Select(i => new
+            {
+                ProductId = i.ProductId.ToString(),
+                ProductName = i.ProductName,
+                CategoryName = categoryByProductId.TryGetValue(i.ProductId, out var cat) ? cat : null,
+                Quantity = (decimal)i.Quantity,
+                UnitPrice = i.UnitPrice
+            }).ToList();
+            var n2OrderId = orderEntity.OrderId;
+            var httpFactory = _httpClientFactory;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var http = httpFactory.CreateClient("UserReport");
+                    var payload = new
+                    {
+                        CustomerId = n3CustomerId,
+                        CustomerName = n3CustomerName,
+                        Email = n3Email,
+                        Phone = n3Phone,
+                        Address = n3Address,
+                        DiscountAmount = n3Discount,
+                        PaymentMethod = n3PaymentMethod,
+                        PaidAmount = n3PaidAmount,
+                        Items = n3Items
+                    };
+                    var res = await http.PostAsJsonAsync("/api/Orders", payload);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        var body = await res.Content.ReadFromJsonAsync<N3OrderCreatedDto>();
+                        if (!string.IsNullOrEmpty(body?.OrderId))
+                            N3OrderTracker.Register(n2OrderId, body.OrderId);
+                    }
+                }
+                catch { /* N3 not available, ignore */ }
+            });
 
             _logger.LogInformation("Checkout completed: {OrderCode}", orderEntity.OrderCode);
 
@@ -335,6 +398,7 @@ namespace OrderApi.Services
                 DiscountValue = dto.DiscountValue,
                 OrderStatus = OrderStatus.Pending,
                 PaymentStatus = PaymentStatus.Unpaid,
+                PaymentMethod = string.IsNullOrWhiteSpace(dto.PaymentMethod) ? "Cash" : dto.PaymentMethod,
             };
 
             decimal totalAmount = 0;
@@ -388,4 +452,6 @@ namespace OrderApi.Services
             return $"InsufficientStock: {details}";
         }
     }
+
+    internal record N3OrderCreatedDto(string? OrderId);
 }

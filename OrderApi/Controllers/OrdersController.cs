@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OrderApi.DTOs.Orders;
 using OrderApi.Services;
@@ -50,14 +50,22 @@ namespace OrderApi.Controllers
 
         [HttpGet("lookup")]
         [AllowAnonymous]
-        public async Task<IActionResult> Lookup([FromQuery] string orderCode, [FromQuery] string phone)
+        public async Task<IActionResult> Lookup([FromQuery] string? orderCode, [FromQuery] string? phone)
         {
-            if (string.IsNullOrWhiteSpace(orderCode) || string.IsNullOrWhiteSpace(phone))
-                return BadRequest(new { message = "Vui lòng nhập mã đơn và số điện thoại." });
+            if (string.IsNullOrWhiteSpace(phone))
+                return BadRequest(new { message = "Vui lòng nhập số điện thoại." });
 
+            // Phone-only mode: return list of all orders for this phone
+            if (string.IsNullOrWhiteSpace(orderCode))
+            {
+                var orders = await _orderService.LookupByPhoneAsync(phone);
+                return Ok(orders);
+            }
+
+            // Code + phone mode: return single matching order
             var order = await _orderService.LookupOrderAsync(orderCode, phone);
             if (order == null)
-                return NotFound(new { message = "Không tìm thấy đơn hàng phù hợp." });
+                return NotFound(new { message = "Không tìm thấy đơn hàng phù hợp. Kiểm tra lại mã đơn và số điện thoại." });
 
             return Ok(order);
         }
@@ -98,13 +106,47 @@ namespace OrderApi.Controllers
             return int.TryParse(raw, out var userId) ? userId : null;
         }
 
+        private static string? TryGetCurrentUserName(ClaimsPrincipal user)
+        {
+            return user.FindFirstValue(ClaimTypes.Name)
+                ?? user.FindFirstValue("name")
+                ?? user.FindFirstValue("username")
+                ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+        }
+
+        // Endpoint cho Machine4 (KhoPro) gọi với order code string thay vì int id
+        [HttpPut("by-code/{code}/status")]
+        [AllowAnonymous]
+        public async Task<IActionResult> UpdateStatusByCode(string code, [FromBody] UpdateOrderStatusRequest request)
+        {
+            var order = await _orderService.GetOrderByCodeAsync(code.Trim().ToUpperInvariant());
+            if (order == null)
+                return NotFound(new { message = $"Không tìm thấy đơn hàng '{code}'." });
+
+            try
+            {
+                var approvedBy = request.ApprovedBy ?? TryGetCurrentUserName(User) ?? "KhoPro";
+                var updated = await _orderService.UpdateOrderStatusAsync(order.OrderId, request.Status, approvedBy);
+                return Ok(updated);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPut("{id}/status")]
         [Authorize(Roles = "Admin,Sales,Warehouse")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusRequest request)
         {
             try
             {
-                var order = await _orderService.UpdateOrderStatusAsync(id, request.Status);
+                var approvedBy = TryGetCurrentUserName(User) ?? request.ApprovedBy;
+                var order = await _orderService.UpdateOrderStatusAsync(id, request.Status, approvedBy);
                 return Ok(order);
             }
             catch (KeyNotFoundException)
@@ -162,6 +204,7 @@ namespace OrderApi.Controllers
     public class UpdateOrderStatusRequest
     {
         public string Status { get; set; } = "";
+        public string? ApprovedBy { get; set; }
     }
 
     public class CustomerCancelOrderRequest

@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename)
 const distDir = path.join(__dirname, 'dist')
 const publicHost = process.env.PUBLIC_HOST || '160.250.132.117'
 const apiTarget = process.env.API_TARGET || 'http://127.0.0.1:5000'
+const orderApiTarget = process.env.ORDER_API_TARGET || 'http://127.0.0.1:5022'
 const port = Number(process.env.PORT || 3000)
 
 const mimeTypes = {
@@ -66,14 +67,14 @@ function readBody(req) {
   })
 }
 
-async function proxyApi(req, res) {
+async function proxyTo(target, req, res) {
   try {
     const body = ['GET', 'HEAD'].includes(req.method || 'GET') ? undefined : await readBody(req)
     const headers = { ...req.headers }
     delete headers.host
     delete headers.connection
 
-    const upstream = await fetch(`${apiTarget}${req.url}`, {
+    const upstream = await fetch(`${target}${req.url}`, {
       method: req.method,
       headers,
       body
@@ -91,9 +92,17 @@ async function proxyApi(req, res) {
   }
 }
 
+async function proxyApi(req, res) { return proxyTo(apiTarget, req, res) }
+async function proxyOrderApi(req, res) { return proxyTo(orderApiTarget, req, res) }
+
 const server = createServer(async (req, res) => {
   if ((req.url || '').startsWith('/api/')) {
     await proxyApi(req, res)
+    return
+  }
+
+  if ((req.url || '').startsWith('/avatars/')) {
+    await proxyOrderApi(req, res)
     return
   }
 

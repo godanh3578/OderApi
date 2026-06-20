@@ -121,6 +121,15 @@
       }
     },
     {
+      "UpstreamPathTemplate": "/api/OrderHealth",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/health",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "127.0.0.1", "Port": 5022 }
+      ]
+    },
+    {
       "UpstreamPathTemplate": "/api/OutboxMessages/{everything}",
       "UpstreamHttpMethod": [ "GET", "POST" ],
       "DownstreamPathTemplate": "/api/OutboxMessages/{everything}",

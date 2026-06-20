@@ -45,11 +45,23 @@ namespace OrderApi.Controllers
             return Ok(customer);
         }
         [HttpGet("{id}/profile")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetProfile(int id)
         {
     // Hàm này sẽ vào tận DB lôi dữ liệu mới nhất (đã có ngày sinh) ra trả về
-            var customerDto = await _customerService.GetCustomerProfileAsync(id);
-            return Ok(customerDto);
+            try
+            {
+                var customerDto = await _customerService.GetCustomerProfileAsync(id);
+                return Ok(customerDto);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { message = "Tai khoan khong con ton tai." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
         }
         [HttpPost("Login")]
         [AllowAnonymous]
@@ -61,6 +73,9 @@ namespace OrderApi.Controllers
             var customer = await _customerService.GetCustomerByPhoneAsync(request.Phone.Trim());
             if (customer == null)
                 return NotFound(new { message = "Không tìm thấy khách hàng. Vui lòng đăng ký." });
+
+            if (!string.Equals(customer.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Tai khoan da bi khoa hoac ngung hoat dong." });
 
             return Ok(customer);
         }
@@ -84,7 +99,7 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet("{id}/purchase-history")]
-        [Authorize(Roles = "Admin,Sales")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetPurchaseHistory(int id)
         {
             try
@@ -99,7 +114,7 @@ namespace OrderApi.Controllers
         }
 
         [HttpGet("{id}/debts")]
-        [Authorize(Roles = "Admin,Sales")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetDebts(int id)
         {
             var customer = await _context.Customers.FindAsync(id);
@@ -107,6 +122,16 @@ namespace OrderApi.Controllers
 
             var debts = await _context.Debts
                 .Where(d => d.CustomerId == id)
+                .Select(d => new {
+                    d.DebtId,
+                    d.OrderId,
+                    d.DebtAmount,
+                    d.PaidAmount,
+                    d.RemainingAmount,
+                    d.DebtStatus,
+                    d.DueDate,
+                    d.CreatedAt
+                })
                 .ToListAsync();
 
             return Ok(new

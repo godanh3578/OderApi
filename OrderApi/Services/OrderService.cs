@@ -2,6 +2,7 @@ using OrderApi.Data;
 using OrderApi.DTOs.Orders;
 using OrderApi.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Net.Http;
 
 namespace OrderApi.Services
 {
@@ -11,17 +12,20 @@ namespace OrderApi.Services
         private readonly IOutboxService _outboxService;
         private readonly ILogger<OrderService> _logger;
         private readonly IProductCatalogClient? _productCatalogClient;
+        private readonly IHttpClientFactory? _httpClientFactory;
 
         public OrderService(
             OrderDbContext dbContext,
             IOutboxService outboxService,
             ILogger<OrderService> logger,
-            IProductCatalogClient? productCatalogClient = null)
+            IProductCatalogClient? productCatalogClient = null,
+            IHttpClientFactory? httpClientFactory = null)
         {
             _dbContext = dbContext;
             _outboxService = outboxService;
             _logger = logger;
             _productCatalogClient = productCatalogClient;
+            _httpClientFactory = httpClientFactory;
         }
 
         public async Task<OrderDto?> GetOrderByIdAsync(int orderId)
@@ -37,27 +41,44 @@ namespace OrderApi.Services
 
         public async Task<OrderDto?> GetOrderByCodeAsync(string orderCode)
         {
+            var upper = orderCode.Trim().ToUpperInvariant();
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Items)
                 .Include(o => o.Payments)
-                .FirstOrDefaultAsync(o => o.OrderCode == orderCode);
+                .FirstOrDefaultAsync(o => o.OrderCode.ToUpper() == upper);
 
             return order == null ? null : MapToDto(order);
         }
 
         public async Task<OrderDto?> LookupOrderAsync(string orderCode, string phone)
         {
+            var normalizedCode = orderCode.Trim().ToUpperInvariant();
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Items)
                 .Include(o => o.Payments)
-                .FirstOrDefaultAsync(o => o.OrderCode == orderCode.Trim());
+                .FirstOrDefaultAsync(o => o.OrderCode.ToUpper() == normalizedCode);
 
             if (order?.Customer == null || order.Customer.Phone != phone.Trim())
                 return null;
 
             return MapToDto(order);
+        }
+
+        public async Task<List<OrderDto>> LookupByPhoneAsync(string phone)
+        {
+            var normalizedPhone = phone.Trim();
+            var orders = await _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Items)
+                .Include(o => o.Payments)
+                .Where(o => o.Customer != null && o.Customer.Phone == normalizedPhone)
+                .OrderByDescending(o => o.OrderDate)
+                .Take(50)
+                .ToListAsync();
+
+            return orders.Select(MapToDto).ToList();
         }
 
         public async Task<List<OrderDto>> GetAllOrdersAsync(
@@ -132,8 +153,32 @@ namespace OrderApi.Services
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Một đơn hàng phải có ít nhất một sản phẩm.");
 
-            if (dto.CreatedByUserId <= 0)
-                throw new InvalidOperationException("Đơn hàng phải có nhân viên tạo đơn.");
+            // Xử lý khách lẻ (walk-in từ KhoPro) — CustomerId = 0 hoặc không truyền
+            if (dto.CustomerId <= 0)
+            {
+                var guestPhone = string.IsNullOrWhiteSpace(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone.Trim();
+                var guestName  = string.IsNullOrWhiteSpace(dto.CustomerName)  ? "Khách lẻ"  : dto.CustomerName.Trim();
+                var guest = await _dbContext.Customers
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(c => c.Phone == guestPhone);
+                if (guest == null)
+                {
+                    guest = new Models.Customers
+                    {
+                        CustomerCode = $"KL{guestPhone.Substring(Math.Max(0, guestPhone.Length - 6))}",
+                        FullName = guestName,
+                        Phone = guestPhone,
+                        Email = "",
+                        Address = "",
+                        Status = CustomerStatus.Active,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    };
+                    _dbContext.Customers.Add(guest);
+                    await _dbContext.SaveChangesAsync();
+                }
+                dto.CustomerId = guest.CustomerId;
+            }
 
             if (dto.DiscountAmount < 0)
                 throw new InvalidOperationException("Chiết khấu không được nhỏ hơn 0.");
@@ -228,6 +273,15 @@ namespace OrderApi.Services
             order.DiscountAmount = discountAmount;
             order.FinalAmount = totalAmount - discountAmount;
 
+            // Ghi nhận thanh toán từ KhoPro (bán tại quầy)
+            var paidAmount = Math.Min(dto.PaidAmount, order.FinalAmount);
+            if (paidAmount > 0)
+            {
+                order.PaidAmount = paidAmount;
+                order.PaymentStatus = paidAmount >= order.FinalAmount ? PaymentStatus.Paid : PaymentStatus.Partial;
+                order.OrderStatus = paidAmount >= order.FinalAmount ? OrderStatus.Completed : OrderStatus.Confirmed;
+            }
+
             _dbContext.Orders.Add(order);
             await _dbContext.SaveChangesAsync();
 
@@ -244,11 +298,62 @@ namespace OrderApi.Services
 
             await _outboxService.EnqueueOrderCreatedAsync(order.OrderId);
 
+            // Fire-and-forget: push to N3 (UserReport) for KhoPro orders
+            if (_httpClientFactory != null)
+            {
+                var n2OrderId = order.OrderId;
+                var customer = await _dbContext.Customers.FindAsync(order.CustomerId);
+                var n3CustomerId = order.CustomerId.ToString();
+                var n3CustomerName = customer?.FullName ?? dto.CustomerName ?? "Khách lẻ";
+                var n3Email = customer?.Email ?? "";
+                var n3Phone = customer?.Phone ?? dto.CustomerPhone ?? "";
+                var n3Address = customer?.Address ?? "";
+                var n3Discount = order.DiscountAmount;
+                var n3PaymentMethod = dto.PaymentMethod;
+                var n3PaidAmount = order.PaidAmount;
+                var n3Items = order.Items.Select(i => new
+                {
+                    ProductId = i.ProductId.ToString(),
+                    ProductName = i.ProductName,
+                    CategoryName = (string?)null,
+                    Quantity = (decimal)i.Quantity,
+                    UnitPrice = i.UnitPrice
+                }).ToList();
+                var httpFactory = _httpClientFactory;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var http = httpFactory.CreateClient("UserReport");
+                        var payload = new
+                        {
+                            CustomerId = n3CustomerId,
+                            CustomerName = n3CustomerName,
+                            Email = n3Email,
+                            Phone = n3Phone,
+                            Address = n3Address,
+                            DiscountAmount = n3Discount,
+                            PaymentMethod = n3PaymentMethod,
+                            PaidAmount = n3PaidAmount,
+                            Items = n3Items
+                        };
+                        var res = await http.PostAsJsonAsync("/api/Orders", payload);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            var body = await res.Content.ReadFromJsonAsync<N3OrderCreatedDto>();
+                            if (!string.IsNullOrEmpty(body?.OrderId))
+                                N3OrderTracker.Register(n2OrderId, body.OrderId);
+                        }
+                    }
+                    catch { /* N3 not available, ignore */ }
+                });
+            }
+
             _logger.LogInformation("Order created: {OrderCode}", orderCode);
             return MapToDto(order);
         }
 
-        public async Task<OrderDto> UpdateOrderStatusAsync(int orderId, string status)
+        public async Task<OrderDto> UpdateOrderStatusAsync(int orderId, string status, string? approvedBy = null)
         {
             var order = await _dbContext.Orders
                 .Include(o => o.Customer)
@@ -261,8 +366,48 @@ namespace OrderApi.Services
 
             if (Enum.TryParse<OrderStatus>(status, true, out var orderStatus))
             {
-                order.OrderStatus = orderStatus;
+                // Khi KhoPro xác nhận đơn web (Confirmed/Completed) mà khách chưa trả tiền
+                // → coi như khách vừa thanh toán cash khi nhận hàng
+                if ((orderStatus == OrderStatus.Confirmed || orderStatus == OrderStatus.Completed)
+                    && order.PaymentStatus == PaymentStatus.Unpaid
+                    && order.FinalAmount > 0)
+                {
+                    var debtToClear = order.DebtAmount;
+
+                    order.OrderStatus = OrderStatus.Completed;
+                    order.PaymentStatus = PaymentStatus.Paid;
+                    order.PaidAmount = order.FinalAmount;
+                    order.DebtAmount = 0;
+
+                    // Xóa nợ
+                    if (debtToClear > 0)
+                    {
+                        var debt = await _dbContext.Debts
+                            .FirstOrDefaultAsync(d => d.OrderId == orderId && d.DebtStatus != DebtStatus.Paid);
+                        if (debt != null)
+                        {
+                            debt.PaidAmount = debt.DebtAmount;
+                            debt.RemainingAmount = 0;
+                            debt.DebtStatus = DebtStatus.Paid;
+                        }
+
+                        if (order.Customer != null)
+                            order.Customer.CurrentDebt = Math.Max(0, order.Customer.CurrentDebt - debtToClear);
+                    }
+                }
+                else
+                {
+                    order.OrderStatus = orderStatus;
+                }
+
                 order.UpdatedAt = DateTime.UtcNow;
+
+                if (!string.IsNullOrWhiteSpace(approvedBy) && order.ApprovedBy == null)
+                {
+                    order.ApprovedBy = approvedBy;
+                    order.ApprovedAt = DateTime.UtcNow;
+                }
+
                 await _dbContext.SaveChangesAsync();
             }
 
@@ -316,6 +461,7 @@ namespace OrderApi.Services
             order.OrderStatus = OrderStatus.Cancelled;
             order.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
+            NotifyN3Cancel(orderId);
             return true;
         }
 
@@ -373,7 +519,20 @@ namespace OrderApi.Services
             order.OrderStatus = OrderStatus.Cancelled;
             order.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
+            NotifyN3Cancel(orderId);
             return true;
+        }
+
+        private void NotifyN3Cancel(int n2OrderId)
+        {
+            if (_httpClientFactory == null) return;
+            if (!N3OrderTracker.TryGetAndRemove(n2OrderId, out var n3Id)) return;
+            var factory = _httpClientFactory;
+            _ = Task.Run(async () =>
+            {
+                try { await factory.CreateClient("UserReport").DeleteAsync($"/api/Orders/{n3Id}"); }
+                catch { }
+            });
         }
 
         private static void RefundWalletPayments(Order order)
@@ -463,6 +622,9 @@ namespace OrderApi.Services
                 OrderCode = order.OrderCode,
                 CustomerId = order.CustomerId,
                 CustomerName = order.Customer?.FullName,
+                CustomerPhone = order.Customer?.Phone,
+                CustomerEmail = order.Customer?.Email,
+                CustomerAddress = order.Customer?.Address,
                 OrderDate = order.OrderDate,
                 TotalAmount = order.TotalAmount,
                 DiscountAmount = order.DiscountAmount,
@@ -472,10 +634,13 @@ namespace OrderApi.Services
                 PaidAmount = order.PaidAmount,
                 DebtAmount = order.DebtAmount,
                 PaymentStatus = order.PaymentStatus.ToString(),
-                PaymentMethod = latestPayment?.PaymentMethod.ToString(),
+                PaymentMethod = order.PaymentMethod ?? latestPayment?.PaymentMethod.ToString(),
                 OrderStatus = order.OrderStatus.ToString(),
                 CreatedByUserId = order.CreatedByUserId,
                 CreatedBy = order.CreatedByUserId.ToString(),
+                Source = order.Customer?.Phone == "0000000000" ? "KhoPro" : "Web",
+                ApprovedBy = order.ApprovedBy,
+                ApprovedAt = order.ApprovedAt,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
 

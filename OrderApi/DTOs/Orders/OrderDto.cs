@@ -6,6 +6,9 @@ namespace OrderApi.DTOs.Orders
         public string OrderCode { get; set; } = "";
         public int CustomerId { get; set; }
         public string? CustomerName { get; set; }
+        public string? CustomerPhone { get; set; }
+        public string? CustomerEmail { get; set; }
+        public string? CustomerAddress { get; set; }
         public DateTime OrderDate { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal DiscountAmount { get; set; }
@@ -19,6 +22,9 @@ namespace OrderApi.DTOs.Orders
         public string OrderStatus { get; set; } = "";
         public int CreatedByUserId { get; set; }
         public string CreatedBy { get; set; } = "";
+        public string? Source { get; set; }
+        public string? ApprovedBy { get; set; }
+        public DateTime? ApprovedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public List<OrderDetailDto> Items { get; set; } = new();

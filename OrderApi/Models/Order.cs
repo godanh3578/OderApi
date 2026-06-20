@@ -10,6 +10,7 @@ namespace OrderApi.Models
         Debt = 3,
         Cancelled = 4,
         Shipping = 5,
+        Processing = 6,
         Paid = Completed,
     }
 
@@ -62,6 +63,9 @@ namespace OrderApi.Models
 
         public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
 
+        [StringLength(50)]
+        public string? PaymentMethod { get; set; }
+
         public OrderStatus OrderStatus { get; set; } = OrderStatus.Pending;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -69,6 +73,11 @@ namespace OrderApi.Models
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime? StockRestoredAt { get; set; }
+
+        [StringLength(100)]
+        public string? ApprovedBy { get; set; }
+
+        public DateTime? ApprovedAt { get; set; }
 
         public bool IsDeleted { get; set; } = false;
 

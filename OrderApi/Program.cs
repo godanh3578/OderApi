@@ -82,6 +82,8 @@ builder.Services.AddScoped<IWalletTopUpService, WalletTopUpService>();
 builder.Services.AddScoped<IDebtService, DebtService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<IReturnService, ReturnService>();
+builder.Services.AddScoped<ISalesInvoiceService, SalesInvoiceService>();
 builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>((serviceProvider, client) =>
 {
     var config = serviceProvider.GetRequiredService<IConfiguration>();
@@ -103,6 +105,14 @@ builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>((ser
         .WaitAndRetryAsync(
             retryCount,
             attempt => TimeSpan.FromMilliseconds(baseDelayMs * Math.Pow(2, attempt - 1)));
+});
+
+builder.Services.AddHttpClient("UserReport", (serviceProvider, client) =>
+{
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var baseUrl = config["UserReportIntegration:BaseUrl"] ?? "http://localhost:8083";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(5);
 });
 
 builder.Services.AddMassTransit(x =>
@@ -251,6 +261,13 @@ try
             ALTER TABLE [Suppliers]
             ADD [Note] nvarchar(500) NOT NULL
                 CONSTRAINT [DF_Suppliers_Note] DEFAULT N''
+        END
+
+        IF OBJECT_ID(N'[OutboxMessages]', N'U') IS NOT NULL
+           AND COL_LENGTH(N'OutboxMessages', N'ProcessedAt') IS NULL
+        BEGIN
+            ALTER TABLE [OutboxMessages]
+            ADD [ProcessedAt] datetime2 NULL
         END
         """);
     await DbSeeder.SeedAsync(db);
